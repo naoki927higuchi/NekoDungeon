@@ -19,9 +19,10 @@ public class DungeonGame : MonoBehaviour
     Vector2Int current;
     Vector3 position;
     Transform roomRoot, hero, beacon;
+    CatAvatar cat;
     Camera cam;
     bool complete;
-    float elapsed, transition, stride;
+    float elapsed, transition;
     int moves;
     static readonly Color Teal = new Color(.22f,.85f,.76f);
     static readonly Color Gold = new Color(1f,.73f,.31f);
@@ -40,11 +41,8 @@ public class DungeonGame : MonoBehaviour
         light.transform.rotation = Quaternion.Euler(48,-28,0); light.shadows = LightShadows.Soft;
         RenderSettings.ambientLight = new Color(.38f,.46f,.55f);
         QualitySettings.shadows = ShadowQuality.All; QualitySettings.shadowDistance = 50;
-        hero = new GameObject("Explorer").transform;
-        Shape("Cloak", PrimitiveType.Capsule, new Vector3(0,.65f,0), new Vector3(.55f,.62f,.55f), Teal, hero);
-        Shape("Hood", PrimitiveType.Sphere, new Vector3(0,1.32f,0), Vector3.one*.48f, new Color(.8f,.89f,.84f), hero);
-        Shape("Pack", PrimitiveType.Cube, new Vector3(0,.8f,-.26f), new Vector3(.36f,.42f,.2f), new Color(.24f,.27f,.3f), hero);
-        Shape("Lantern", PrimitiveType.Sphere, new Vector3(.4f,.8f,.12f), Vector3.one*.18f, Gold, hero, true);
+        hero = Instantiate(Resources.Load<GameObject>("ExplorerCat")).transform;
+        cat = hero.GetComponent<CatAvatar>();
         uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Yu Gothic UI", "Meiryo", "Arial" }, 18);
         hero.gameObject.SetActive(false);
         if (Array.IndexOf(Environment.GetCommandLineArgs(), "-selftest") >= 0) SelfTest();
@@ -70,7 +68,7 @@ public class DungeonGame : MonoBehaviour
     {
         current = Vector2Int.zero; exploration.Reset();
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
-        BuildRoom(); hero.position = position; hero.rotation = Quaternion.identity; stride = 0;
+        BuildRoom(); hero.position = position; hero.rotation = Quaternion.Euler(0,180,0); cat.ResetPose();
     }
     void BuildRoom()
     {
@@ -128,15 +126,16 @@ public class DungeonGame : MonoBehaviour
         if(input.Restart) { Restart(); return; }
         if(beacon) { beacon.Rotate(0,45*Time.deltaTime,0,Space.World); beacon.position=new Vector3(0,1.4f+Mathf.Sin(Time.time*2)*.15f,0); }
         transition = Mathf.Max(0,transition-Time.deltaTime);
-        if(complete) return;
+        if(complete) { cat.Animate(0,deltaTime); return; }
         elapsed += Time.deltaTime;
         var direction = new Vector3(input.Move.x,0,input.Move.y);
+        var beforeMove = position;
         if(direction.sqrMagnitude>0) {
             Move(direction*4.4f*deltaTime);
             hero.rotation=Quaternion.Slerp(hero.rotation,Quaternion.LookRotation(direction),Time.deltaTime*14);
-            stride+=Time.deltaTime*12;
         }
-        hero.position=position+Vector3.up*(direction.sqrMagnitude>0?Mathf.Abs(Mathf.Sin(stride))*.055f:0);
+        hero.position=position;
+        cat.Animate((position-beforeMove).sqrMagnitude>.000001f ? direction.magnitude : 0,deltaTime);
         if(current==layout.Goal && position.magnitude<1.05f) complete=true;
     }
     void Move(Vector3 delta)

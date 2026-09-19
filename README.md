@@ -2,6 +2,9 @@
 
 Unity 6000.6.2f1製の、3D見下ろし型ダンジョン探索ゲームです。敵・罠・外部アセットはありません。
 
+プレイヤーは白とグレーのローポリ猫です。翡翠色のスカーフと小さな金色のチャームを身に付け、歩くと四足が動き、しっぽが揺れます。
+モデルはこのゲーム用に作成したオリジナルで、外部モデルのダウンロードや追加ライセンスは不要です。
+
 ## 起動
 
 `Builds/Windows/QuietVault.exe` を開きます。配布時はWindowsフォルダー全体を渡してください。
@@ -54,6 +57,9 @@ Unity Hubにこのフォルダーを追加し、`Assets/Scenes/Dungeon.unity`を
 `Assets/Scripts/DungeonGame.cs` が部屋配置・移動・3D表示・UIを担当します。
 `Assets/Scripts/DungeonLayout.cs` がランダムな部屋配置と探索記録を管理します。
 `Assets/Scripts/DungeonInput.cs` がキーボードとゲームパッドの入力をまとめます。
+猫のモデルは `Assets/Resources/ExplorerCat.prefab`、メッシュとマテリアルは `Assets/Resources/CatModel/` にあります。
+`Assets/Scripts/CatAvatar.cs` が猫の形状定義と歩行・待機アニメーションを担当します。
+Unityメニューの **Dungeon > Rebuild Cat Model** でモデルを再生成できます。ビルド時にも再生成するため、恒久的な形状変更は `CatAvatar.cs` に反映してください。
 Input System 1.20.0を使用し、Active Input HandlingはBoth（従来の入力も有効）にしています。
 部屋配置は上下左右で隣接する座標同士が双方向につながり、未訪問の部屋の情報は地図描画に渡しません。
 Unityメニューの **Dungeon > Build Windows** または `Build-Windows.ps1` で再ビルドできます。
