@@ -77,7 +77,7 @@ HPは部屋を移動しても保持されます。0になるとゲームオー�
 
 ## 起動
 
-`Builds/Windows/NekoDungeon.exe` を開きます。配布時はWindowsフォルダー全体を渡してください。
+`Builds/Windows/NekoDungeon.exe` を開きます。再頒布には `Build-Windows.ps1` が作成する `Builds/NekoDungeon-Windows.zip` を使用してください。受け取った側ではZIP全体を展開して起動します。
 
 - WASD / 矢印キー：移動。光る扉の先まで歩くと隣の部屋へ移動します。
 - 起動時に初級・中級・上級をクリック、または1 / 2 / 3キーで選択
@@ -140,6 +140,21 @@ Unityメニューの **Dungeon > Rebuild Cat Model** でモデルを再生成で
 Input System 1.20.0を使用し、Active Input HandlingはBoth（従来の入力も有効）にしています。
 部屋配置は上下左右で隣接する座標同士が双方向につながり、未訪問の部屋の情報は地図描画に渡しません。
 Unityメニューの **Dungeon > Build Windows** または `Build-Windows.ps1` で再ビルドできます。
+
+### 再頒布用ビルド
+
+ゲームを終了してから `./Build-Windows.ps1` を実行します。
+Unity側のビルド処理は `Builds/Windows` を生成物専用フォルダーとして毎回削除・再作成し、旧タイトルの実行ファイルやデータが混ざることを防ぎます。この場所に手作業のファイルを保存しないでください。リンクを含む出力先は削除せずエラーにします。
+
+スクリプトはビルドと自動テスト後、実行に必要なファイルだけを選び、説明書・外部素材の出典・元のライセンス文書とともにZIP化します。ソース、Unityキャッシュ、開発ログ、デバッグ用バックアップは配布しません。ZIPを別フォルダーに展開し、全ファイルのハッシュ照合と展開先での自動テストに成功した後、配布ZIPを更新します。失敗した場合は既存の配布ZIPを維持し、診断用の一時フォルダーが残る場合があります。
+
+- 配布物：`Builds/NekoDungeon-Windows.zip`
+- SHA256：`Builds/NekoDungeon-Windows.zip.sha256`
+- 配布用説明書の原本：`Distribution/README.txt`
+- ZIP内：`NekoDungeon-Windows/README.txt`、`THIRD_PARTY_NOTICES.md`、`Licenses/`
+
+Unityメニューからのビルドも出力先の清掃と文書の同梱を行いますが、テストと配布ZIP作成にはPowerShellスクリプトを使用してください。
+KenneyのCC0アセットは帰属表示が必須ではありませんが、出典と原文を任意で同梱します。CC0の適用対象はKenney素材であり、ゲーム全体やUnityのランタイムではありません。
 
 ## 検証
 
