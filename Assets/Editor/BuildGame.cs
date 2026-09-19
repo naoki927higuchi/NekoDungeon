@@ -11,6 +11,7 @@ public static class BuildGame
         if (!AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Stone.mat"))
             AssetDatabase.CreateAsset(new Material(Shader.Find("Standard")), "Assets/Resources/Stone.mat");
         CatModelBuilder.Build();
+        TrapAssetBuilder.Build();
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         new GameObject("Dungeon", typeof(DungeonGame));
         System.IO.Directory.CreateDirectory("Assets/Scenes");

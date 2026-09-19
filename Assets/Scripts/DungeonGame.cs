@@ -7,6 +7,9 @@ public class DungeonGame : MonoBehaviour
 {
     DungeonLayout layout;
     Dictionary<Vector2Int,List<RatSpawn>> encounters;
+    Dictionary<Vector2Int,List<TrapSpawn>> trapPlan;
+    readonly Dictionary<Vector2Int,List<TrapState>> trapRooms=new Dictionary<Vector2Int,List<TrapState>>();
+    readonly List<TrapActor> traps=new List<TrapActor>();
     readonly ExplorationMap exploration = new ExplorationMap();
     HashSet<Vector2Int> visited => exploration.Visited;
     static Vector2Int[] Directions => DungeonLayout.Directions;
@@ -64,6 +67,15 @@ public class DungeonGame : MonoBehaviour
         uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Yu Gothic UI", "Meiryo", "Arial" }, 18);
         hero.gameObject.SetActive(false);
         if (Array.IndexOf(Environment.GetCommandLineArgs(), "-selftest") >= 0) SelfTest();
+        else if(Array.IndexOf(Environment.GetCommandLineArgs(),"-trap-preview")>=0) {
+            // Optional visual QA room using the same imported prefabs and damage logic.
+            BeginGame(0);
+            trapPlan[current]=new List<TrapSpawn>{
+                new TrapSpawn(TrapKind.Spikes,new Vector2(-2.65f,1.6f),Vector2.right,0),
+                new TrapSpawn(TrapKind.Saw,new Vector2(0,1.6f),Vector2.right,0),
+                new TrapSpawn(TrapKind.SpikeBlock,new Vector2(2.65f,1.6f),Vector2.right,0)};
+            trapRooms.Clear();BuildRoom();
+        }
     }
 
     Material Mat(Color color, bool glow = false)
@@ -84,14 +96,14 @@ public class DungeonGame : MonoBehaviour
     void Box(string label, Vector3 p, Vector3 size, Color c) { Shape(label, PrimitiveType.Cube, p, size, c, roomRoot); }
     void Restart()
     {
-        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear(); defeatedMice=0; CancelPunch(); health.Reset();cat.SetVisible(true);
+        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear(); trapRooms.Clear(); defeatedMice=0; CancelPunch(); health.Reset();cat.SetVisible(true);
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
         BuildRoom(); hero.position = position; hero.rotation = Quaternion.Euler(0,180,0); cat.ResetPose();
     }
     void BuildRoom()
     {
         if (roomRoot != null) { roomRoot.gameObject.SetActive(false); Destroy(roomRoot.gameObject); }
-        roomRoot = new GameObject("Room " + current).transform; beacon = null; rats.Clear();
+        roomRoot = new GameObject("Room " + current).transform; beacon = null; rats.Clear(); traps.Clear();
         Color stone = new Color(.19f,.25f,.29f), edge = new Color(.27f,.34f,.38f);
         Box("Floating foundation", new Vector3(0,-.52f,0), new Vector3(10.8f,.8f,10.8f), new Color(.1f,.15f,.19f));
         for (int x=-4;x<=4;x++) for(int z=-4;z<=4;z++) {
@@ -127,6 +139,20 @@ public class DungeonGame : MonoBehaviour
             beacon.rotation = Quaternion.Euler(45,0,45);
         }
         SpawnRats();
+        SpawnTraps();
+    }
+    void SpawnTraps()
+    {
+        if(!trapRooms.TryGetValue(current,out var states)) {
+            states=new List<TrapState>();
+            foreach(var spawn in trapPlan[current]) states.Add(new TrapState(spawn));
+            trapRooms[current]=states;
+        }
+        foreach(var state in states) {
+            var prefab=Resources.Load<GameObject>("Traps/"+state.Spawn.Kind);
+            var actor=Instantiate(prefab,roomRoot).GetComponent<TrapActor>();
+            actor.Initialize(state);traps.Add(actor);
+        }
     }
     void SpawnRats()
     {
@@ -193,6 +219,12 @@ public class DungeonGame : MonoBehaviour
                 hitMessage="攻撃を受けた！  HP -1";hitMessageTime=.8f;
             }
         }
+        foreach(var trap in traps) {
+            trap.State.Tick(deltaTime);trap.Sync();
+            if(trap.State.Hits(new Vector2(position.x,position.z)) && health.Hurt()) {
+                hitMessage="罠に触れた！  HP -1";hitMessageTime=.8f;
+            }
+        }
         cat.SetVisible(!health.Invulnerable || (int)(Time.unscaledTime*12)%2==0);
         if(health.Dead) { CancelPunch();cat.SetVisible(true);return; }
         if(current==layout.Goal && position.magnitude<1.05f) { complete=true; CancelPunch(); }
@@ -232,6 +264,7 @@ public class DungeonGame : MonoBehaviour
         DrawMap(muted);
         Label(new Rect(1028,455,210,28),"猫のHP  "+health.HP+" / "+CatHealth.MaxHP,18,health.HP<=2?new Color(1,.4f,.3f):Teal);
         for(int i=0;i<CatHealth.MaxHP;i++) Panel(new Rect(1028+i*40,491,32,14),i<health.HP?(health.HP<=2?new Color(1,.4f,.3f):Teal):new Color(.15f,.20f,.24f));
+        Label(new Rect(1028,590,215,72),"床トゲ : 黄色の予告に注意\n丸ノコ : 往復移動\nトゲブロック : 接触に注意",12,muted);
         Label(new Rect(1028,527,215,50),"茶色 : 逃げるネズミ\n赤色 : 攻撃するネズミ",12,muted);
         Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
         Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
@@ -265,6 +298,7 @@ public class DungeonGame : MonoBehaviour
         difficulty = level; selectedDifficulty = level; menuNavigation.Reset();
         int seed=seeds.Next();layout = DungeonLayout.Generate(level,seed);
         encounters=RoomEncounters.Generate(layout,level,seed);
+        trapPlan=RoomTraps.Generate(layout,encounters,level,seed);
         choosing = false; hero.gameObject.SetActive(true); Restart();
     }
     void ShowDifficulty()
@@ -275,7 +309,7 @@ public class DungeonGame : MonoBehaviour
     void DrawDifficulty()
     {
         Label(new Rect(240,180,800,55),"未知のダンジョンへ",32,Color.white,TextAnchor.MiddleCenter);
-        Label(new Rect(240,244,800,55),"訪れた部屋と、そこで見つけた通路を地図に記録します。\n赤いネズミの攻撃に注意。HPが0になるとゲームオーバー。",17,Teal,TextAnchor.MiddleCenter);
+        Label(new Rect(240,244,800,55),"訪れた部屋と、そこで見つけた通路を地図に記録します。\n赤いネズミと3種類の罠に注意。HPが0でゲームオーバー。",17,Teal,TextAnchor.MiddleCenter);
         var style = new GUIStyle(GUI.skin.button) { fontSize = 23 };
         for(int i=0; i<3; i++) {
             float x=225+i*285;
@@ -323,6 +357,7 @@ public class DungeonGame : MonoBehaviour
     {
         BeginGame(level);
         foreach(var room in layout.Rooms) {
+            trapPlan[room]=new List<TrapSpawn>();
             encounters[room]=new List<RatSpawn>{new RatSpawn(new Vector2(1.6f,.35f),false,Vector2.down)};
             if(room!=Vector2Int.zero) encounters[room].Add(new RatSpawn(new Vector2(-2,1.5f),true,Vector2.down));
         }
@@ -455,11 +490,39 @@ public class DungeonGame : MonoBehaviour
         Restart();complete=true;int before=health.HP;Tick(default,.05f);
         if(health.HP!=before) throw new Exception("Damage after clear");
     }
+    void TestTrapFlow()
+    {
+        foreach(TrapKind kind in Enum.GetValues(typeof(TrapKind))) {
+            BeginFixtureGame(0);
+            var spawn=new TrapSpawn(kind,new Vector2(2.65f,2.65f),Vector2.right,0);
+            trapPlan[current]=new List<TrapSpawn>{spawn};trapRooms.Clear();BuildRoom();
+            if(traps.Count!=1 || traps[0].GetComponentsInChildren<MeshFilter>().Length==0) throw new Exception("Missing imported trap visual");
+            var state=traps[0].State;if(kind==TrapKind.Spikes) state.Tick(2.8f);
+            var p=state.Position;position=new Vector3(p.x,0,p.y);Tick(default,0);
+            if(health.HP!=4) throw new Exception("Trap damage failed");
+            Tick(default,0);if(health.HP!=4) throw new Exception("Trap bypassed invulnerability");
+            Vector2Int exit=Vector2Int.zero;foreach(var d in Directions) if(CanTravel(current,d)){exit=d;break;}
+            float saved=state.Time;Travel(exit);Tick(default,.05f);Travel(-exit);
+            if(traps[0].State!=state || state.Time!=saved) throw new Exception("Off-room trap advanced or reset");
+            ShowDifficulty();Tick(default,.05f);if(state.Time!=saved) throw new Exception("Trap advanced in menu");
+            choosing=false;hero.gameObject.SetActive(true);Restart();
+            if(traps.Count!=1 || traps[0].State.Time!=0 || health.HP!=5) throw new Exception("Trap retry failed");
+            state=traps[0].State;if(kind==TrapKind.Spikes)state.Tick(2.8f);
+            p=state.Position;position=new Vector3(p.x,0,p.y);
+            for(int i=0;i<4;i++){health.Tick(2);health.Hurt();}health.Tick(2);
+            Tick(default,0);if(!health.Dead)throw new Exception("Trap failed to cause game over");
+            saved=state.Time;Tick(default,.05f);if(state.Time!=saved)throw new Exception("Trap advanced after game over");
+            Restart();complete=true;saved=traps[0].State.Time;Tick(default,.05f);
+            if(traps[0].State.Time!=saved || health.HP!=5)throw new Exception("Trap active after clear");
+        }
+    }
     void SelfTest()
     {
         try {
             DungeonTests.Run();
             EncounterTests.Run();
+            TrapTests.Run();
+            TestTrapFlow();
             TestRandomEncounters();
             RatTests.Run();
             HealthTests.Run();
@@ -506,7 +569,7 @@ public class DungeonGame : MonoBehaviour
                 ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: random encounters, empty rooms, difficulty distributions, stable retry/re-entry; hunters, attack windup/dodge/cooldown, HP/invulnerability, death/retry, room HP persistence; cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: imported trap models, timing/damage/pause/retry/safe routes; random encounters, empty rooms, difficulty distributions, stable retry/re-entry; hunters, attack windup/dodge/cooldown, HP/invulnerability, death/retry, room HP persistence; cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
