@@ -6,7 +6,8 @@ public sealed class CatAvatar : MonoBehaviour
 {
     [SerializeField] Transform body, head, tail;
     [SerializeField] Transform[] legs;
-    float phase, blend;
+    float phase, blend, punchTime;
+    public void Punch() { punchTime=.25f; }
 
     public void Animate(float speed, float dt)
     {
@@ -19,10 +20,14 @@ public sealed class CatAvatar : MonoBehaviour
             legs[i].localRotation = Quaternion.Euler(Mathf.Sin(phase+offset)*26*blend,0,0);
         }
         tail.localRotation = Quaternion.Euler(0, Mathf.Sin(phase*.45f)*17, Mathf.Sin(phase*.35f)*7);
+        punchTime=Mathf.Max(0,punchTime-dt);
+        float punch=Mathf.Sin((1-punchTime/.25f)*Mathf.PI);
+        legs[1].localPosition=new Vector3(.20f,.38f,.24f+punch*.24f);
+        if(punchTime>0) legs[1].localRotation=Quaternion.Euler(-110*punch,0,-18*punch);
     }
     public void ResetPose()
     {
-        phase=0; blend=0; Animate(0,0);
+        phase=0; blend=0; punchTime=0; Animate(0,0);
     }
 
     // Called in the editor to bake an editable prefab, mesh assets and materials.

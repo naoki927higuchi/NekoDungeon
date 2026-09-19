@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 public struct DungeonInputFrame
 {
     public Vector2 Move;
-    public bool Confirm, Restart, Menu, Back, Quit;
+    public bool Confirm, Restart, Menu, Back, Quit, Attack;
     public int DifficultyKey; // 0 = none, 1..3 = existing keyboard shortcuts.
 }
 
@@ -23,6 +23,7 @@ public static class DungeonInput
         frame.Menu |= Input.GetKeyDown(KeyCode.N);
         frame.Quit = Input.GetKeyDown(KeyCode.Escape);
         frame.Confirm |= Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space);
+        frame.Attack |= Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.J);
         frame.DifficultyKey = Input.GetKeyDown(KeyCode.Alpha1) ? 1 : Input.GetKeyDown(KeyCode.Alpha2) ? 2 : Input.GetKeyDown(KeyCode.Alpha3) ? 3 : 0;
         return frame;
     }
@@ -42,6 +43,7 @@ public static class DungeonInput
             frame.Restart |= pad.buttonNorth.wasPressedThisFrame;
             frame.Menu |= pad.startButton.wasPressedThisFrame;
             frame.Back |= pad.buttonEast.wasPressedThisFrame;
+            frame.Attack |= pad.buttonWest.wasPressedThisFrame;
         }
         return frame;
     }

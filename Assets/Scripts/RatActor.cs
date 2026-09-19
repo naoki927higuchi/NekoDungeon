@@ -6,7 +6,7 @@ public sealed class RatActor : MonoBehaviour
     public RatBrain Brain { get; private set; }
     Transform body, tail, alert;
     readonly Transform[] feet=new Transform[4];
-    float phase;
+    float phase, defeatTime;
 
     public void Initialize(RatBrain brain,Material fur,Material pink,Material dark,Material gold)
     {
@@ -36,6 +36,15 @@ public sealed class RatActor : MonoBehaviour
     }
     public void Sync(float dt)
     {
+        if(Brain.Defeated) {
+            defeatTime+=dt; float t=Mathf.Clamp01(defeatTime/.35f);
+            alert.gameObject.SetActive(false);
+            transform.localPosition=new Vector3(Brain.Position.x,Mathf.Sin(t*Mathf.PI)*.4f,Brain.Position.y);
+            body.localRotation=Quaternion.Euler(0,0,t*150);
+            transform.localScale=Vector3.one*(1-t);
+            if(t>=1) gameObject.SetActive(false);
+            return;
+        }
         phase+=dt*(Brain.Speed>0?18:2);
         transform.localPosition=new Vector3(Brain.Position.x,0,Brain.Position.y);
         var rotation=Quaternion.LookRotation(new Vector3(Brain.Forward.x,0,Brain.Forward.y));

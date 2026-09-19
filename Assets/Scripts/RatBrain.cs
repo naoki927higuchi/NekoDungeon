@@ -7,10 +7,16 @@ public sealed class RatBrain
     public Vector2 Position;
     public Vector2 Forward = Vector2.down;
     public bool Fleeing { get; private set; }
+    public bool Defeated { get; private set; }
     public float Speed { get; private set; }
     float memory;
 
     public RatBrain(Vector2 position) { Position = position; }
+    public bool Defeat()
+    {
+        if(Defeated) return false;
+        Defeated=true; Fleeing=false; Speed=0; memory=0; return true;
+    }
     public bool SeesCat(Vector2 cat)
     {
         var delta=cat-Position;
@@ -20,7 +26,7 @@ public sealed class RatBrain
     }
     public void Tick(Vector2 cat,float dt)
     {
-        if(dt<=0) return;
+        if(dt<=0 || Defeated) return;
         dt=Mathf.Min(dt,.05f);
         if(SeesCat(cat)) memory=1.4f;
         else memory=Mathf.Max(0,memory-dt);

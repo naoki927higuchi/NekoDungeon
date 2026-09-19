@@ -24,14 +24,14 @@ public static class DungeonInputTests
             InputSystem.QueueStateEvent(pad, new GamepadState().WithButton(GamepadButton.DpadLeft).WithButton(GamepadButton.DpadUp)); InputSystem.Update();
             var diagonal = DungeonInput.ReadGamepads(devices).Move;
             Check(diagonal.x < 0 && diagonal.y > 0 && diagonal.magnitude <= 1.001f, "Dpad diagonal speed incorrect");
-            foreach(var button in new[] { GamepadButton.South, GamepadButton.North, GamepadButton.Start, GamepadButton.East }) {
+            foreach(var button in new[] { GamepadButton.South, GamepadButton.North, GamepadButton.Start, GamepadButton.East, GamepadButton.West }) {
                 InputSystem.QueueStateEvent(pad, new GamepadState()); InputSystem.Update();
                 InputSystem.QueueStateEvent(pad, new GamepadState().WithButton(button)); InputSystem.Update();
                 var frame = DungeonInput.ReadGamepads(devices);
                 Check(frame.Confirm == (button == GamepadButton.South) && frame.Restart == (button == GamepadButton.North)
-                    && frame.Menu == (button == GamepadButton.Start) && frame.Back == (button == GamepadButton.East), "Button mapping incorrect");
+                    && frame.Attack == (button == GamepadButton.West) && frame.Menu == (button == GamepadButton.Start) && frame.Back == (button == GamepadButton.East), "Button mapping incorrect");
                 InputSystem.Update(); frame = DungeonInput.ReadGamepads(devices);
-                Check(!frame.Confirm && !frame.Restart && !frame.Menu && !frame.Back, "Held button repeated action");
+                Check(!frame.Confirm && !frame.Restart && !frame.Menu && !frame.Back && !frame.Attack, "Held button repeated action");
             }
             Check(DungeonInput.CombineMovement(Vector2.right,Vector2.left)==Vector2.right, "Keyboard blocked by controller");
             Check(Mathf.Abs(DungeonInput.CombineMovement(Vector2.one,Vector2.zero).magnitude-1)<.001f, "Keyboard diagonal faster");

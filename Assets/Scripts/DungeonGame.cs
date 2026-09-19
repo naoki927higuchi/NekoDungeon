@@ -20,6 +20,11 @@ public class DungeonGame : MonoBehaviour
     Vector3 position;
     Transform roomRoot, hero, beacon;
     CatAvatar cat;
+    readonly CatPunch punch = new CatPunch();
+    LineRenderer swipe;
+    float swipeTime, hitMessageTime;
+    int defeatedMice;
+    string hitMessage;
     readonly Dictionary<Vector2Int, List<RatBrain>> roomRats = new Dictionary<Vector2Int, List<RatBrain>>();
     readonly List<RatActor> rats = new List<RatActor>();
     Camera cam;
@@ -45,6 +50,15 @@ public class DungeonGame : MonoBehaviour
         QualitySettings.shadows = ShadowQuality.All; QualitySettings.shadowDistance = 50;
         hero = Instantiate(Resources.Load<GameObject>("ExplorerCat")).transform;
         cat = hero.GetComponent<CatAvatar>();
+        var swipeObject=new GameObject("Paw swipe"); swipeObject.transform.SetParent(hero,false);
+        swipe=swipeObject.AddComponent<LineRenderer>(); swipe.useWorldSpace=false;
+        swipe.sharedMaterial=Mat(Teal,true); swipe.startWidth=.085f;swipe.endWidth=.025f;
+        swipe.positionCount=13;
+        for(int i=0;i<13;i++) {
+            float angle=Mathf.Lerp(-60,60,i/12f)*Mathf.Deg2Rad;
+            swipe.SetPosition(i,new Vector3(Mathf.Sin(angle),.45f,Mathf.Cos(angle))*1.04f);
+        }
+        swipe.enabled=false;
         uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Yu Gothic UI", "Meiryo", "Arial" }, 18);
         hero.gameObject.SetActive(false);
         if (Array.IndexOf(Environment.GetCommandLineArgs(), "-selftest") >= 0) SelfTest();
@@ -68,7 +82,7 @@ public class DungeonGame : MonoBehaviour
     void Box(string label, Vector3 p, Vector3 size, Color c) { Shape(label, PrimitiveType.Cube, p, size, c, roomRoot); }
     void Restart()
     {
-        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear();
+        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear(); defeatedMice=0; CancelPunch();
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
         BuildRoom(); hero.position = position; hero.rotation = Quaternion.Euler(0,180,0); cat.ResetPose();
     }
@@ -120,6 +134,7 @@ public class DungeonGame : MonoBehaviour
             roomRats[current]=states;
         }
         foreach(var state in states) {
+            if(state.Defeated) continue;
             var obj=new GameObject("Fleeing mouse");obj.transform.SetParent(roomRoot,false);
             var rat=obj.AddComponent<RatActor>();
             rat.Initialize(state,Mat(new Color(.52f,.36f,.24f)),Mat(new Color(.85f,.51f,.49f)),Mat(new Color(.04f,.03f,.025f)),Mat(Gold,true));
@@ -144,20 +159,35 @@ public class DungeonGame : MonoBehaviour
         if(beacon) { beacon.Rotate(0,45*Time.deltaTime,0,Space.World); beacon.position=new Vector3(0,1.4f+Mathf.Sin(Time.time*2)*.15f,0); }
         transition = Mathf.Max(0,transition-Time.deltaTime);
         if(complete) { cat.Animate(0,deltaTime); return; }
+        punch.Tick(deltaTime);
+        swipeTime=Mathf.Max(0,swipeTime-deltaTime); swipe.enabled=swipeTime>0;
+        hitMessageTime=Mathf.Max(0,hitMessageTime-deltaTime);
         elapsed += Time.deltaTime;
         var direction = new Vector3(input.Move.x,0,input.Move.y);
         var beforeMove = position;
+        var beforeRoom = current;
         if(direction.sqrMagnitude>0) {
             Move(direction*4.4f*deltaTime);
             hero.rotation=Quaternion.Slerp(hero.rotation,Quaternion.LookRotation(direction),Time.deltaTime*14);
         }
         hero.position=position;
+        if(input.Attack && current==beforeRoom) {
+            // Aim immediately in the requested direction when moving; otherwise use the
+            // visible facing direction. Movement and attack work on the same frame.
+            if(direction.sqrMagnitude>0) hero.rotation=Quaternion.LookRotation(direction);
+            int hits=punch.Strike(new Vector2(position.x,position.z),new Vector2(hero.forward.x,hero.forward.z),roomRats[current]);
+            if(hits>=0) {
+                cat.Punch();swipeTime=.20f;swipe.enabled=true;
+                defeatedMice+=hits;hitMessageTime=.65f;
+                hitMessage=hits>0?"猫パンチ！  ネズミを倒した":"猫パンチ！";
+            }
+        }
         cat.Animate((position-beforeMove).sqrMagnitude>.000001f ? direction.magnitude : 0,deltaTime);
         foreach(var rat in rats) {
             rat.Brain.Tick(new Vector2(position.x,position.z),deltaTime);
             rat.Sync(deltaTime);
         }
-        if(current==layout.Goal && position.magnitude<1.05f) complete=true;
+        if(current==layout.Goal && position.magnitude<1.05f) { complete=true; CancelPunch(); }
     }
     void Move(Vector3 delta)
     {
@@ -173,7 +203,7 @@ public class DungeonGame : MonoBehaviour
     void Travel(Vector2Int dir)
     {
         if(choosing || complete || !CanTravel(current,dir)) return;
-        current+=dir; moves++; exploration.Visit(current);
+        CancelPunch(); current+=dir; moves++; exploration.Visit(current);
         position=new Vector3(-dir.x*4.15f,0,-dir.y*4.15f); transition=.28f; BuildRoom();
     }
     void Panel(Rect rect, Color c) { GUI.color=c; GUI.DrawTexture(rect,Texture2D.whiteTexture); GUI.color=Color.white; }
@@ -194,10 +224,11 @@ public class DungeonGame : MonoBehaviour
         DrawMap(muted);
         Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
         Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
-        Label(new Rect(35,185,540,25),"ネズミは猫を見つけると逃げます",13,muted);
+        Label(new Rect(35,185,540,25),"倒したネズミ  " + defeatedMice + " 匹",13,muted);
+        if(hitMessageTime>0) Label(new Rect(35,215,540,25),hitMessage,17,Gold);
         Panel(new Rect(0,728,1280,72),new Color(.025f,.045f,.065f,.95f));
-        Label(new Rect(35,738,980,25),"WASD / 矢印 : 移動     R : 同じ地図でやり直す     N : 難易度選択 / 新しい地図     Esc : 終了",14,muted);
-        Label(new Rect(35,766,980,25),"パッド : 左スティック / 方向キーで移動   Y : やり直す   Start / B : 難易度選択",13,muted);
+        Label(new Rect(35,738,980,25),"WASD / 矢印 : 移動   Space / J : 猫パンチ   R : やり直す   N : 難易度選択   Esc : 終了",14,muted);
+        Label(new Rect(35,766,980,25),"パッド : 左スティック / 方向キーで移動   X : 猫パンチ   Y : やり直す   Start / B : 難易度選択",13,muted);
         Label(new Rect(1000,748,245,30),TimeSpan.FromSeconds(elapsed).ToString(@"mm\:ss"),18,Teal,TextAnchor.MiddleRight);
         if(transition>0) Panel(new Rect(0,95,1000,630),new Color(.02f,.04f,.06f,transition));
         if(complete) {
@@ -217,7 +248,7 @@ public class DungeonGame : MonoBehaviour
     }
     void ShowDifficulty()
     {
-        choosing = true; menuNavigation.Reset(); hero.gameObject.SetActive(false);
+        choosing = true; CancelPunch(); menuNavigation.Reset(); hero.gameObject.SetActive(false);
         if(roomRoot) roomRoot.gameObject.SetActive(false);
     }
     void DrawDifficulty()
@@ -234,7 +265,7 @@ public class DungeonGame : MonoBehaviour
             if(GUI.Button(new Rect(x+20,465,220,62),DifficultyName(i)+"   [ "+(i+1)+" ]",style)) BeginGame(i);
         }
         Label(new Rect(200,565,880,32),"← → / 左スティック / 方向キー : 選択    A / Enter : 決定    B / Esc : 終了",16,Teal,TextAnchor.MiddleCenter);
-        Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  猫に気づくと逃げるネズミ",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
+        Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  Space / J / パッドX で猫パンチ",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
     }
     void DrawMap(Color muted)
     {
@@ -286,6 +317,33 @@ public class DungeonGame : MonoBehaviour
         Tick(new DungeonInputFrame { Confirm=true },0);
         if(!choosing) throw new Exception("Controller clear-screen confirm failed");
     }
+    void CancelPunch()
+    {
+        punch.Reset();swipeTime=0;hitMessageTime=0;
+        if(swipe) swipe.enabled=false;
+        if(cat) cat.ResetPose();
+    }
+    void TestPunchFlow()
+    {
+        BeginGame(0);
+        var rat=rats[0].Brain;
+        position=Vector3.zero;hero.rotation=Quaternion.identity;rat.Position=Vector2.up;
+        Tick(new DungeonInputFrame{Attack=true},0);
+        if(!rat.Defeated || defeatedMice!=1 || !swipe.enabled) throw new Exception("Game punch failed");
+        Tick(new DungeonInputFrame{Attack=true},0);
+        if(defeatedMice!=1) throw new Exception("Duplicate defeat counted");
+        foreach(var d in Directions) if(CanTravel(current,d)) { Travel(d);Travel(-d);break; }
+        if(rats.Count!=0 || defeatedMice!=1) throw new Exception("Defeated mouse respawned on revisit");
+        Restart();if(rats.Count!=1 || defeatedMice!=0 || rats[0].Brain.Defeated) throw new Exception("Restart did not restore mice");
+        var alive=rats[0].Brain;position=Vector3.zero;hero.rotation=Quaternion.identity;alive.Position=Vector2.up;
+        ShowDifficulty();Tick(new DungeonInputFrame{Attack=true},0);
+        if(alive.Defeated || swipe.enabled) throw new Exception("Menu attack allowed");
+        BeginGame(0);alive=rats[0].Brain;alive.Position=Vector2.up;position=Vector3.zero;hero.rotation=Quaternion.identity;complete=true;
+        Tick(new DungeonInputFrame{Attack=true},0);if(alive.Defeated) throw new Exception("Attack after clear");
+        BeginGame(0);alive=rats[0].Brain;alive.Position=Vector2.right;position=Vector3.zero;
+        Tick(new DungeonInputFrame{Move=Vector2.right,Attack=true},.01f);
+        if(!alive.Defeated) throw new Exception("Moving punch aimed incorrectly");
+    }
     void TestRatRooms()
     {
         BeginGame(0);
@@ -311,6 +369,8 @@ public class DungeonGame : MonoBehaviour
         try {
             DungeonTests.Run();
             RatTests.Run();
+            CatPunchTests.Run();
+            TestPunchFlow();
             TestRatRooms();
             DungeonInputTests.Run();
             TestControllerFlow();
@@ -351,7 +411,7 @@ public class DungeonGame : MonoBehaviour
                 ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
