@@ -6,6 +6,7 @@ using UnityEngine;
 public class DungeonGame : MonoBehaviour
 {
     DungeonLayout layout;
+    Dictionary<Vector2Int,List<RatSpawn>> encounters;
     readonly ExplorationMap exploration = new ExplorationMap();
     HashSet<Vector2Int> visited => exploration.Visited;
     static Vector2Int[] Directions => DungeonLayout.Directions;
@@ -130,8 +131,8 @@ public class DungeonGame : MonoBehaviour
     void SpawnRats()
     {
         if(!roomRats.TryGetValue(current,out var states)) {
-            states = new List<RatBrain> { new RatBrain(new Vector2(1.6f,.35f)) };
-            if(current!=Vector2Int.zero) states.Add(new RatBrain(new Vector2(-2.0f,1.5f),true));
+            states = new List<RatBrain>();
+            foreach(var spawn in encounters[current]) states.Add(spawn.Create());
             roomRats[current]=states;
         }
         foreach(var state in states) {
@@ -261,7 +262,9 @@ public class DungeonGame : MonoBehaviour
     static string DifficultyName(int level) { return new[] { "初級", "中級", "上級" }[level]; }
     void BeginGame(int level)
     {
-        difficulty = level; selectedDifficulty = level; menuNavigation.Reset(); layout = DungeonLayout.Generate(level, seeds.Next());
+        difficulty = level; selectedDifficulty = level; menuNavigation.Reset();
+        int seed=seeds.Next();layout = DungeonLayout.Generate(level,seed);
+        encounters=RoomEncounters.Generate(layout,level,seed);
         choosing = false; hero.gameObject.SetActive(true); Restart();
     }
     void ShowDifficulty()
@@ -279,7 +282,7 @@ public class DungeonGame : MonoBehaviour
             if(i==selectedDifficulty) Panel(new Rect(x-3,347,266,216),Teal);
             Panel(new Rect(x,350,260,210),new Color(.055f,.09f,.12f));
             Label(new Rect(x,374,260,28),DungeonLayout.RoomCounts[i] + " 部屋",17,Teal,TextAnchor.MiddleCenter);
-            Label(new Rect(x+10,412,240,30),new[]{"短い道のりを気軽に探索","分岐をたどって奥へ","広い迷宮をじっくり探索"}[i],14,Color.white,TextAnchor.MiddleCenter);
+            Label(new Rect(x+10,412,240,30),new[]{"0〜2匹 / 逃走型中心","0〜3匹 / 2種類が混在","0〜4匹 / 攻撃型が多い"}[i],14,Color.white,TextAnchor.MiddleCenter);
             if(GUI.Button(new Rect(x+20,465,220,62),DifficultyName(i)+"   [ "+(i+1)+" ]",style)) BeginGame(i);
         }
         Label(new Rect(200,565,880,32),"← → / 左スティック / 方向キー : 選択    A / Enter : 決定    B / Esc : 終了",16,Teal,TextAnchor.MiddleCenter);
@@ -315,6 +318,38 @@ public class DungeonGame : MonoBehaviour
         }
         Label(new Rect(1028,389,210,24),exploration.GoalVisible(layout)?"S 開始地点   G ゴール":"S 開始地点   ─ 発見した通路",11,muted);
     }
+    // Combat tests use explicit encounters so they do not depend on random population.
+    void BeginFixtureGame(int level)
+    {
+        BeginGame(level);
+        foreach(var room in layout.Rooms) {
+            encounters[room]=new List<RatSpawn>{new RatSpawn(new Vector2(1.6f,.35f),false,Vector2.down)};
+            if(room!=Vector2Int.zero) encounters[room].Add(new RatSpawn(new Vector2(-2,1.5f),true,Vector2.down));
+        }
+        Restart();
+    }
+    void TestRandomEncounters()
+    {
+        for(int level=0;level<3;level++) {
+            BeginGame(level);
+            if(rats.Count!=0) throw new Exception("Start was not empty");
+            Vector2Int populated=Vector2Int.zero;
+            foreach(var room in layout.Rooms) {
+                current=room;BuildRoom();
+                if(rats.Count!=encounters[room].Count) throw new Exception("Spawn count differs from plan");
+                if(rats.Count>0) populated=room;
+            }
+            if(populated==Vector2Int.zero) continue; // All-empty is allowed by the distribution.
+            current=populated;BuildRoom();var original=roomRats[current];var template=encounters[current];
+            original[0].Defeat();if(original.Count>1) original[1].Position=Vector2.zero;
+            current=Vector2Int.zero;BuildRoom();current=populated;BuildRoom();
+            if(roomRats[current]!=original || rats.Count!=original.Count-1) throw new Exception("Re-entry rerolled population");
+            if(original.Count>1 && original[1].Position!=Vector2.zero) throw new Exception("Re-entry reset mouse position");
+            Restart();current=populated;BuildRoom();
+            if(rats.Count!=template.Count || encounters[current]!=template) throw new Exception("Retry rerolled initial population");
+            for(int i=0;i<rats.Count;i++) if(rats[i].Brain.Position!=template[i].Position || rats[i].Brain.Aggressive!=template[i].Aggressive || rats[i].Brain.Defeated) throw new Exception("Retry failed to restore spawn");
+        }
+    }
     void TestControllerFlow()
     {
         ShowDifficulty(); selectedDifficulty=0;
@@ -343,7 +378,7 @@ public class DungeonGame : MonoBehaviour
     }
     void TestPunchFlow()
     {
-        BeginGame(0);
+        BeginFixtureGame(0);
         var rat=rats[0].Brain;
         position=Vector3.zero;hero.rotation=Quaternion.identity;rat.Position=Vector2.up;
         Tick(new DungeonInputFrame{Attack=true},0);
@@ -356,15 +391,15 @@ public class DungeonGame : MonoBehaviour
         var alive=rats[0].Brain;position=Vector3.zero;hero.rotation=Quaternion.identity;alive.Position=Vector2.up;
         ShowDifficulty();Tick(new DungeonInputFrame{Attack=true},0);
         if(alive.Defeated || swipe.enabled) throw new Exception("Menu attack allowed");
-        BeginGame(0);alive=rats[0].Brain;alive.Position=Vector2.up;position=Vector3.zero;hero.rotation=Quaternion.identity;complete=true;
+        BeginFixtureGame(0);alive=rats[0].Brain;alive.Position=Vector2.up;position=Vector3.zero;hero.rotation=Quaternion.identity;complete=true;
         Tick(new DungeonInputFrame{Attack=true},0);if(alive.Defeated) throw new Exception("Attack after clear");
-        BeginGame(0);alive=rats[0].Brain;alive.Position=Vector2.right;position=Vector3.zero;
+        BeginFixtureGame(0);alive=rats[0].Brain;alive.Position=Vector2.right;position=Vector3.zero;
         Tick(new DungeonInputFrame{Move=Vector2.right,Attack=true},.01f);
         if(!alive.Defeated) throw new Exception("Moving punch aimed incorrectly");
     }
     void TestRatRooms()
     {
-        BeginGame(0);
+        BeginFixtureGame(0);
         if(rats.Count!=1) throw new Exception("Missing start mouse");
         var initial= rats[0].Brain;
         initial.Position=new Vector2(2,2);
@@ -375,7 +410,7 @@ public class DungeonGame : MonoBehaviour
         if(rats.Count!=1 || rats[0].Brain!=initial || initial.Position!=new Vector2(2,2)) throw new Exception("Mouse position was not preserved");
         ShowDifficulty();Tick(default,.05f);
         if(initial.Position!=new Vector2(2,2)) throw new Exception("Mouse moved in menu");
-        BeginGame(1);
+        BeginFixtureGame(1);
         if(rats[0].Brain==initial || roomRats.Count!=1) throw new Exception("New dungeon retained old mice");
         rats[0].Brain.Position=Vector2.zero;Restart();
         if(rats[0].Brain.Position!=new Vector2(1.6f,.35f)) throw new Exception("Mouse restart failed");
@@ -384,7 +419,7 @@ public class DungeonGame : MonoBehaviour
     }
     void TestHealthFlow()
     {
-        BeginGame(0);
+        BeginFixtureGame(0);
         Vector2Int exit=Vector2Int.zero;
         foreach(var d in Directions) if(CanTravel(current,d)) { exit=d;break; }
         Travel(exit);
@@ -396,7 +431,7 @@ public class DungeonGame : MonoBehaviour
         Travel(-exit);if(health.HP!=4) throw new Exception("Room change restored HP");
         ShowDifficulty();int savedHP=health.HP;Tick(default,.05f);
         if(health.HP!=savedHP) throw new Exception("Menu damaged cat");
-        BeginGame(0);foreach(var d in Directions) if(CanTravel(current,d)) {exit=d;break;}Travel(exit);hunter=rats.Find(r=>r.Brain.Aggressive);
+        BeginFixtureGame(0);foreach(var d in Directions) if(CanTravel(current,d)) {exit=d;break;}Travel(exit);hunter=rats.Find(r=>r.Brain.Aggressive);
         position=Vector3.zero;hunter.Brain.Position=new Vector2(0,.7f);
         for(int i=0;i<300 && !health.Dead;i++) Tick(default,.05f);
         if(!health.Dead || complete) throw new Exception("No game over at zero HP");
@@ -412,7 +447,7 @@ public class DungeonGame : MonoBehaviour
         for(int i=0;i<30;i++) Tick(default,.05f);
         if(!hunter.Brain.Defeated || health.HP!=CatHealth.MaxHP) throw new Exception("Defeated hunter dealt damage");
         // A lethal hit at the exit must lose, not show the clear screen.
-        BeginGame(0);current=layout.Goal;BuildRoom();position=Vector3.zero;hunter=rats.Find(r=>r.Brain.Aggressive);hunter.Brain.Position=Vector2.up*.7f;
+        BeginFixtureGame(0);current=layout.Goal;BuildRoom();position=Vector3.zero;hunter=rats.Find(r=>r.Brain.Aggressive);hunter.Brain.Position=Vector2.up*.7f;
         for(int i=0;i<4;i++) {health.Tick(2);health.Hurt();}health.Tick(2);
         hunter.Brain.Tick(Vector2.zero,.05f);for(int i=0;i<8;i++) hunter.Brain.Tick(Vector2.zero,.05f);
         Tick(default,.05f);
@@ -424,6 +459,8 @@ public class DungeonGame : MonoBehaviour
     {
         try {
             DungeonTests.Run();
+            EncounterTests.Run();
+            TestRandomEncounters();
             RatTests.Run();
             HealthTests.Run();
             TestHealthFlow();
@@ -433,7 +470,7 @@ public class DungeonGame : MonoBehaviour
             DungeonInputTests.Run();
             TestControllerFlow();
             for(int level=0;level<3;level++) {
-                BeginGame(level);
+                BeginFixtureGame(level);
                 if(choosing || visited.Count!=1 || exploration.GoalVisible(layout)) throw new Exception("Initial state leaked map");
                 var start=Vector2Int.zero;
                 foreach(var d in Directions) if(CanTravel(start,d)) {
@@ -469,7 +506,7 @@ public class DungeonGame : MonoBehaviour
                 ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: hunters, attack windup/dodge/cooldown, HP/invulnerability, death/retry, room HP persistence; cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: random encounters, empty rooms, difficulty distributions, stable retry/re-entry; hunters, attack windup/dodge/cooldown, HP/invulnerability, death/retry, room HP persistence; cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
