@@ -20,6 +20,7 @@ public class DungeonGame : MonoBehaviour
     Vector3 position;
     Transform roomRoot, hero, beacon;
     CatAvatar cat;
+    readonly CatHealth health = new CatHealth();
     readonly CatPunch punch = new CatPunch();
     LineRenderer swipe;
     float swipeTime, hitMessageTime;
@@ -82,7 +83,7 @@ public class DungeonGame : MonoBehaviour
     void Box(string label, Vector3 p, Vector3 size, Color c) { Shape(label, PrimitiveType.Cube, p, size, c, roomRoot); }
     void Restart()
     {
-        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear(); defeatedMice=0; CancelPunch();
+        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear(); defeatedMice=0; CancelPunch(); health.Reset();cat.SetVisible(true);
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
         BuildRoom(); hero.position = position; hero.rotation = Quaternion.Euler(0,180,0); cat.ResetPose();
     }
@@ -130,14 +131,14 @@ public class DungeonGame : MonoBehaviour
     {
         if(!roomRats.TryGetValue(current,out var states)) {
             states = new List<RatBrain> { new RatBrain(new Vector2(1.6f,.35f)) };
-            if(current!=Vector2Int.zero) states.Add(new RatBrain(new Vector2(-2.0f,1.5f)));
+            if(current!=Vector2Int.zero) states.Add(new RatBrain(new Vector2(-2.0f,1.5f),true));
             roomRats[current]=states;
         }
         foreach(var state in states) {
             if(state.Defeated) continue;
-            var obj=new GameObject("Fleeing mouse");obj.transform.SetParent(roomRoot,false);
+            var obj=new GameObject(state.Aggressive?"Attacking mouse":"Fleeing mouse");obj.transform.SetParent(roomRoot,false);
             var rat=obj.AddComponent<RatActor>();
-            rat.Initialize(state,Mat(new Color(.52f,.36f,.24f)),Mat(new Color(.85f,.51f,.49f)),Mat(new Color(.04f,.03f,.025f)),Mat(Gold,true));
+            rat.Initialize(state,Mat(state.Aggressive?new Color(.60f,.18f,.15f):new Color(.52f,.36f,.24f)),Mat(new Color(.85f,.51f,.49f)),Mat(new Color(.04f,.03f,.025f)),Mat(state.Aggressive?new Color(1f,.25f,.10f):Gold,true));
             rats.Add(rat);
         }
     }
@@ -155,10 +156,11 @@ public class DungeonGame : MonoBehaviour
             return;
         }
         if(input.Menu || input.Back || (complete && input.Confirm)) { ShowDifficulty(); return; }
-        if(input.Restart) { Restart(); return; }
+        if(input.Restart || (health.Dead && input.Confirm)) { Restart(); return; }
         if(beacon) { beacon.Rotate(0,45*Time.deltaTime,0,Space.World); beacon.position=new Vector3(0,1.4f+Mathf.Sin(Time.time*2)*.15f,0); }
         transition = Mathf.Max(0,transition-Time.deltaTime);
-        if(complete) { cat.Animate(0,deltaTime); return; }
+        if(complete || health.Dead) { cat.SetVisible(true);cat.Animate(0,deltaTime); return; }
+        health.Tick(deltaTime);
         punch.Tick(deltaTime);
         swipeTime=Mathf.Max(0,swipeTime-deltaTime); swipe.enabled=swipeTime>0;
         hitMessageTime=Mathf.Max(0,hitMessageTime-deltaTime);
@@ -186,7 +188,12 @@ public class DungeonGame : MonoBehaviour
         foreach(var rat in rats) {
             rat.Brain.Tick(new Vector2(position.x,position.z),deltaTime);
             rat.Sync(deltaTime);
+            if(rat.Brain.AttackLanded && health.Hurt()) {
+                hitMessage="攻撃を受けた！  HP -1";hitMessageTime=.8f;
+            }
         }
+        cat.SetVisible(!health.Invulnerable || (int)(Time.unscaledTime*12)%2==0);
+        if(health.Dead) { CancelPunch();cat.SetVisible(true);return; }
         if(current==layout.Goal && position.magnitude<1.05f) { complete=true; CancelPunch(); }
     }
     void Move(Vector3 delta)
@@ -202,7 +209,7 @@ public class DungeonGame : MonoBehaviour
     }
     void Travel(Vector2Int dir)
     {
-        if(choosing || complete || !CanTravel(current,dir)) return;
+        if(choosing || complete || health.Dead || !CanTravel(current,dir)) return;
         CancelPunch(); current+=dir; moves++; exploration.Visit(current);
         position=new Vector3(-dir.x*4.15f,0,-dir.y*4.15f); transition=.28f; BuildRoom();
     }
@@ -222,6 +229,9 @@ public class DungeonGame : MonoBehaviour
         Label(new Rect(860,62,380,22),"FLOOR 01  /  CAT & MICE",11,muted,TextAnchor.MiddleRight);
         if (choosing) { DrawDifficulty(); return; }
         DrawMap(muted);
+        Label(new Rect(1028,455,210,28),"猫のHP  "+health.HP+" / "+CatHealth.MaxHP,18,health.HP<=2?new Color(1,.4f,.3f):Teal);
+        for(int i=0;i<CatHealth.MaxHP;i++) Panel(new Rect(1028+i*40,491,32,14),i<health.HP?(health.HP<=2?new Color(1,.4f,.3f):Teal):new Color(.15f,.20f,.24f));
+        Label(new Rect(1028,527,215,50),"茶色 : 逃げるネズミ\n赤色 : 攻撃するネズミ",12,muted);
         Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
         Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
         Label(new Rect(35,185,540,25),"倒したネズミ  " + defeatedMice + " 匹",13,muted);
@@ -231,7 +241,15 @@ public class DungeonGame : MonoBehaviour
         Label(new Rect(35,766,980,25),"パッド : 左スティック / 方向キーで移動   X : 猫パンチ   Y : やり直す   Start / B : 難易度選択",13,muted);
         Label(new Rect(1000,748,245,30),TimeSpan.FromSeconds(elapsed).ToString(@"mm\:ss"),18,Teal,TextAnchor.MiddleRight);
         if(transition>0) Panel(new Rect(0,95,1000,630),new Color(.02f,.04f,.06f,transition));
-        if(complete) {
+        if(health.Dead) {
+            Panel(new Rect(0,95,1280,633),new Color(.025f,.01f,.02f,.85f));
+            Panel(new Rect(365,240,550,310),new Color(.10f,.055f,.075f));
+            Label(new Rect(365,267,550,62),"GAME OVER",36,new Color(1,.4f,.3f),TextAnchor.MiddleCenter);
+            Label(new Rect(365,344,550,35),"HPがなくなりました",19,Color.white,TextAnchor.MiddleCenter);
+            if(GUI.Button(new Rect(425,414,430,45),"同じ地図で再挑戦  [ R / Y / A / Enter ]")) Restart();
+            if(GUI.Button(new Rect(425,478,430,42),"難易度選択へ  [ N / Start / B ]")) ShowDifficulty();
+        }
+        else if(complete) {
             Panel(new Rect(0,95,1280,633),new Color(.015f,.025f,.04f,.80f));
             Panel(new Rect(390,254,500,278),new Color(.055f,.09f,.12f));
             Label(new Rect(390,280,500,24),"J O U R N E Y   C O M P L E T E",13,Teal,TextAnchor.MiddleCenter);
@@ -254,7 +272,7 @@ public class DungeonGame : MonoBehaviour
     void DrawDifficulty()
     {
         Label(new Rect(240,180,800,55),"未知のダンジョンへ",32,Color.white,TextAnchor.MiddleCenter);
-        Label(new Rect(240,244,800,55),"訪れた部屋と、そこで見つけた通路を地図に記録します。\nゴールの場所は、到達するまで分かりません。",17,Teal,TextAnchor.MiddleCenter);
+        Label(new Rect(240,244,800,55),"訪れた部屋と、そこで見つけた通路を地図に記録します。\n赤いネズミの攻撃に注意。HPが0になるとゲームオーバー。",17,Teal,TextAnchor.MiddleCenter);
         var style = new GUIStyle(GUI.skin.button) { fontSize = 23 };
         for(int i=0; i<3; i++) {
             float x=225+i*285;
@@ -364,11 +382,51 @@ public class DungeonGame : MonoBehaviour
         complete=true;var before=rats[0].Brain.Position;Tick(default,.05f);
         if(rats[0].Brain.Position!=before) throw new Exception("Mouse moved after clear");
     }
+    void TestHealthFlow()
+    {
+        BeginGame(0);
+        Vector2Int exit=Vector2Int.zero;
+        foreach(var d in Directions) if(CanTravel(current,d)) { exit=d;break; }
+        Travel(exit);
+        var hunter=rats.Find(r=>r.Brain.Aggressive);
+        if(hunter==null || !rats.Exists(r=>!r.Brain.Aggressive)) throw new Exception("Missing mixed mouse types");
+        position=Vector3.zero;hunter.Brain.Position=new Vector2(0,.7f);
+        for(int i=0;i<12;i++) Tick(default,.05f);
+        if(health.HP!=4) throw new Exception("Hunter did not damage cat");
+        Travel(-exit);if(health.HP!=4) throw new Exception("Room change restored HP");
+        ShowDifficulty();int savedHP=health.HP;Tick(default,.05f);
+        if(health.HP!=savedHP) throw new Exception("Menu damaged cat");
+        BeginGame(0);foreach(var d in Directions) if(CanTravel(current,d)) {exit=d;break;}Travel(exit);hunter=rats.Find(r=>r.Brain.Aggressive);
+        position=Vector3.zero;hunter.Brain.Position=new Vector2(0,.7f);
+        for(int i=0;i<300 && !health.Dead;i++) Tick(default,.05f);
+        if(!health.Dead || complete) throw new Exception("No game over at zero HP");
+        var frozen=position;var ratPosition=hunter.Brain.Position;
+        Tick(new DungeonInputFrame{Move=Vector2.up,Attack=true},.05f);
+        Travel(-exit);
+        if(position!=frozen || hunter.Brain.Position!=ratPosition || hunter.Brain.Defeated) throw new Exception("Game continued after death");
+        var sameLayout=layout;
+        Tick(new DungeonInputFrame{Confirm=true},0);
+        if(health.HP!=CatHealth.MaxHP || layout!=sameLayout || current!=Vector2Int.zero) throw new Exception("Game-over retry failed");
+        Travel(exit);hunter=rats.Find(r=>r.Brain.Aggressive);position=Vector3.zero;hero.rotation=Quaternion.identity;hunter.Brain.Position=Vector2.up*.7f;
+        Tick(new DungeonInputFrame{Attack=true},.05f);
+        for(int i=0;i<30;i++) Tick(default,.05f);
+        if(!hunter.Brain.Defeated || health.HP!=CatHealth.MaxHP) throw new Exception("Defeated hunter dealt damage");
+        // A lethal hit at the exit must lose, not show the clear screen.
+        BeginGame(0);current=layout.Goal;BuildRoom();position=Vector3.zero;hunter=rats.Find(r=>r.Brain.Aggressive);hunter.Brain.Position=Vector2.up*.7f;
+        for(int i=0;i<4;i++) {health.Tick(2);health.Hurt();}health.Tick(2);
+        hunter.Brain.Tick(Vector2.zero,.05f);for(int i=0;i<8;i++) hunter.Brain.Tick(Vector2.zero,.05f);
+        Tick(default,.05f);
+        if(!health.Dead || complete) throw new Exception("Lethal hit did not take priority over clear");
+        Restart();complete=true;int before=health.HP;Tick(default,.05f);
+        if(health.HP!=before) throw new Exception("Damage after clear");
+    }
     void SelfTest()
     {
         try {
             DungeonTests.Run();
             RatTests.Run();
+            HealthTests.Run();
+            TestHealthFlow();
             CatPunchTests.Run();
             TestPunchFlow();
             TestRatRooms();
@@ -411,7 +469,7 @@ public class DungeonGame : MonoBehaviour
                 ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: hunters, attack windup/dodge/cooldown, HP/invulnerability, death/retry, room HP persistence; cat punch range, facing, cooldown, defeat persistence, keyboard/gamepad attack; mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }

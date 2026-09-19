@@ -7,6 +7,12 @@ public sealed class CatAvatar : MonoBehaviour
     [SerializeField] Transform body, head, tail;
     [SerializeField] Transform[] legs;
     float phase, blend, punchTime;
+    MeshRenderer[] modelRenderers;
+    public void SetVisible(bool visible)
+    {
+        if(modelRenderers==null) modelRenderers=GetComponentsInChildren<MeshRenderer>();
+        foreach(var renderer in modelRenderers) renderer.enabled=visible;
+    }
     public void Punch() { punchTime=.25f; }
 
     public void Animate(float speed, float dt)

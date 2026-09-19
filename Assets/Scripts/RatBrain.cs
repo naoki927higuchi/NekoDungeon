@@ -8,14 +8,19 @@ public sealed class RatBrain
     public Vector2 Forward = Vector2.down;
     public bool Fleeing { get; private set; }
     public bool Defeated { get; private set; }
+    public bool Aggressive { get; private set; }
+    public bool Chasing { get; private set; }
+    public bool WindingUp => windup>0;
+    public bool AttackLanded { get; private set; }
+    float windup, attackCooldown;
     public float Speed { get; private set; }
     float memory;
 
-    public RatBrain(Vector2 position) { Position = position; }
+    public RatBrain(Vector2 position,bool aggressive=false) { Position = position; Aggressive=aggressive; }
     public bool Defeat()
     {
         if(Defeated) return false;
-        Defeated=true; Fleeing=false; Speed=0; memory=0; return true;
+        Defeated=true; Fleeing=false; Chasing=false; AttackLanded=false; windup=0; Speed=0; memory=0; return true;
     }
     public bool SeesCat(Vector2 cat)
     {
@@ -26,8 +31,10 @@ public sealed class RatBrain
     }
     public void Tick(Vector2 cat,float dt)
     {
+        AttackLanded=false;
         if(dt<=0 || Defeated) return;
         dt=Mathf.Min(dt,.05f);
+        if(Aggressive) { TickHunter(cat,dt); return; }
         if(SeesCat(cat)) memory=1.4f;
         else memory=Mathf.Max(0,memory-dt);
         Fleeing=memory>0; Speed=0;
@@ -52,5 +59,31 @@ public sealed class RatBrain
         Speed=movement.magnitude/dt;
         if(movement.sqrMagnitude>.000001f) Forward=movement.normalized;
         Position=next;
+    }
+    void TickHunter(Vector2 cat,float dt)
+    {
+        Speed=0;attackCooldown=Mathf.Max(0,attackCooldown-dt);
+        var delta=cat-Position;float distance=delta.magnitude;
+        if(distance<6) memory=2;
+        else memory=Mathf.Max(0,memory-dt);
+        Chasing=memory>0;
+        if(windup>0) {
+            windup=Mathf.Max(0,windup-dt);
+            if(windup<=0) {
+                // The cat can dodge during the visible wind-up; proximity is checked now.
+                AttackLanded=distance<=1.05f;
+                attackCooldown=1.2f;
+            }
+            return;
+        }
+        if(!Chasing) return;
+        if(distance>.001f) Forward=delta/distance;
+        if(distance<=.9f) {
+            if(attackCooldown<=0) windup=.45f;
+            return;
+        }
+        var next=Vector2.MoveTowards(Position,cat,2.6f*dt);
+        next=new Vector2(Mathf.Clamp(next.x,-RoomLimit,RoomLimit),Mathf.Clamp(next.y,-RoomLimit,RoomLimit));
+        Speed=(next-Position).magnitude/dt;Position=next;
     }
 }

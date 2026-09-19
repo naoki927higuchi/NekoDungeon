@@ -15,6 +15,7 @@ public sealed class RatActor : MonoBehaviour
         body=Pivot("Mouse body",transform,new Vector3(0,.25f,0));
         Part("Brown fur",mesh,body,Vector3.zero,new Vector3(.43f,.36f,.63f),fur);
         Part("Tapered snout",mesh,body,new Vector3(0,.01f,.29f),new Vector3(.26f,.25f,.37f),fur);
+        if(brain.Aggressive) Part("Red hunter crest",mesh,body,new Vector3(0,.17f,0),new Vector3(.28f,.12f,.32f),gold);
         Part("Pink nose",mesh,body,new Vector3(0,.015f,.46f),Vector3.one*.075f,pink);
         foreach(int side in new[]{-1,1}) {
             Part("Round ear",mesh,body,new Vector3(side*.17f,.18f,.19f),new Vector3(.23f,.25f,.085f),fur);
@@ -50,9 +51,11 @@ public sealed class RatActor : MonoBehaviour
         var rotation=Quaternion.LookRotation(new Vector3(Brain.Forward.x,0,Brain.Forward.y));
         transform.localRotation=dt>0?Quaternion.Slerp(transform.localRotation,rotation,dt*18):rotation;
         body.localPosition=new Vector3(0,.25f+(Brain.Speed>0?Mathf.Abs(Mathf.Sin(phase))*.035f:Mathf.Sin(phase)*.009f),0);
+        body.localRotation=Quaternion.Euler(Brain.WindingUp?-20:0,0,0);
         for(int i=0;i<4;i++) feet[i].localRotation=Quaternion.Euler(Brain.Speed>0?Mathf.Sin(phase+(i==0||i==3?0:Mathf.PI))*30:0,0,0);
         tail.localRotation=Quaternion.Euler(0,Mathf.Sin(phase*.6f)*18,0);
-        alert.gameObject.SetActive(Brain.Fleeing);
+        alert.gameObject.SetActive(Brain.Fleeing || Brain.Chasing);
+        alert.localScale=Vector3.one*(Brain.WindingUp?1.35f+Mathf.Sin(phase*8)*.15f:1);
     }
     static Transform Pivot(string name,Transform parent,Vector3 p)
     {var t=new GameObject(name).transform;t.SetParent(parent,false);t.localPosition=p;return t;}
