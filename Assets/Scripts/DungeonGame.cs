@@ -5,14 +5,14 @@ using UnityEngine;
 // All connectivity is derived from cardinal grid adjacency, including the return door.
 public class DungeonGame : MonoBehaviour
 {
-    public static readonly Vector2Int[] Rooms = {
-        new Vector2Int(0,0), new Vector2Int(0,1), new Vector2Int(-1,1),
-        new Vector2Int(1,1), new Vector2Int(-1,2), new Vector2Int(0,2),
-        new Vector2Int(1,2), new Vector2Int(2,2), new Vector2Int(0,3),
-        new Vector2Int(-1,3), new Vector2Int(2,3), new Vector2Int(2,4)
-    };
-    public static readonly Vector2Int[] Directions = { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
-    readonly HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
+    DungeonLayout layout;
+    readonly ExplorationMap exploration = new ExplorationMap();
+    HashSet<Vector2Int> visited => exploration.Visited;
+    static Vector2Int[] Directions => DungeonLayout.Directions;
+    readonly System.Random seeds = new System.Random();
+    bool choosing = true;
+    int difficulty;
+    Font uiFont;
     readonly Dictionary<Color, Material> materials = new Dictionary<Color, Material>();
     Vector2Int current;
     Vector3 position;
@@ -23,8 +23,7 @@ public class DungeonGame : MonoBehaviour
     int moves;
     static readonly Color Teal = new Color(.22f,.85f,.76f);
     static readonly Color Gold = new Color(1f,.73f,.31f);
-    public static bool HasRoom(Vector2Int cell) { return Array.IndexOf(Rooms, cell) >= 0; }
-    public static bool CanTravel(Vector2Int cell, Vector2Int dir) { return Array.IndexOf(Directions, dir) >= 0 && HasRoom(cell) && HasRoom(cell + dir); }
+    bool CanTravel(Vector2Int cell, Vector2Int dir) { return layout != null && layout.CanTravel(cell, dir); }
 
     void Start()
     {
@@ -44,7 +43,8 @@ public class DungeonGame : MonoBehaviour
         Shape("Hood", PrimitiveType.Sphere, new Vector3(0,1.32f,0), Vector3.one*.48f, new Color(.8f,.89f,.84f), hero);
         Shape("Pack", PrimitiveType.Cube, new Vector3(0,.8f,-.26f), new Vector3(.36f,.42f,.2f), new Color(.24f,.27f,.3f), hero);
         Shape("Lantern", PrimitiveType.Sphere, new Vector3(.4f,.8f,.12f), Vector3.one*.18f, Gold, hero, true);
-        Restart();
+        uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Yu Gothic UI", "Meiryo", "Arial" }, 18);
+        hero.gameObject.SetActive(false);
         if (Array.IndexOf(Environment.GetCommandLineArgs(), "-selftest") >= 0) SelfTest();
     }
 
@@ -66,9 +66,9 @@ public class DungeonGame : MonoBehaviour
     void Box(string label, Vector3 p, Vector3 size, Color c) { Shape(label, PrimitiveType.Cube, p, size, c, roomRoot); }
     void Restart()
     {
-        current = Rooms[0]; visited.Clear(); visited.Add(current);
+        current = Vector2Int.zero; exploration.Reset();
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
-        BuildRoom(); hero.position = position;
+        BuildRoom(); hero.position = position; hero.rotation = Quaternion.identity; stride = 0;
     }
     void BuildRoom()
     {
@@ -102,7 +102,7 @@ public class DungeonGame : MonoBehaviour
             Shape("Corner pedestal",PrimitiveType.Cylinder,new Vector3(x*4.35f,.4f,z*4.35f),new Vector3(.65f,.4f,.65f),edge,roomRoot);
             Shape("Crystal",PrimitiveType.Cube,new Vector3(x*4.35f,1,z*4.35f),Vector3.one*.26f,Teal,roomRoot,true).rotation=Quaternion.Euler(30,45,20);
         }
-        bool goal = current == Rooms[Rooms.Length-1];
+        bool goal = current == layout.Goal;
         Shape("Center medallion",PrimitiveType.Cylinder,new Vector3(0,.065f,0),new Vector3(2.1f,.04f,2.1f),goal?Gold*.6f:edge,roomRoot);
         if(goal) {
             beacon = Shape("Exit crystal",PrimitiveType.Cube,new Vector3(0,1.4f,0),Vector3.one*.65f,Gold,roomRoot,true);
@@ -112,7 +112,14 @@ public class DungeonGame : MonoBehaviour
     void Update()
     {
         if(Input.GetKeyDown(KeyCode.Escape)) Application.Quit();
+        if (choosing) {
+            if (Input.GetKeyDown(KeyCode.Alpha1)) BeginGame(0);
+            else if (Input.GetKeyDown(KeyCode.Alpha2)) BeginGame(1);
+            else if (Input.GetKeyDown(KeyCode.Alpha3)) BeginGame(2);
+            return;
+        }
         if(Input.GetKeyDown(KeyCode.R)) Restart();
+        if(Input.GetKeyDown(KeyCode.N)) { ShowDifficulty(); return; }
         if(beacon) { beacon.Rotate(0,45*Time.deltaTime,0,Space.World); beacon.position=new Vector3(0,1.4f+Mathf.Sin(Time.time*2)*.15f,0); }
         transition = Mathf.Max(0,transition-Time.deltaTime);
         if(complete) return;
@@ -125,7 +132,7 @@ public class DungeonGame : MonoBehaviour
             stride+=Time.deltaTime*12;
         }
         hero.position=position+Vector3.up*(direction.sqrMagnitude>0?Mathf.Abs(Mathf.Sin(stride))*.055f:0);
-        if(current==Rooms[Rooms.Length-1] && position.magnitude<1.05f) complete=true;
+        if(current==layout.Goal && position.magnitude<1.05f) complete=true;
     }
     void Move(Vector3 delta)
     {
@@ -140,8 +147,8 @@ public class DungeonGame : MonoBehaviour
     }
     void Travel(Vector2Int dir)
     {
-        if(!CanTravel(current,dir)) return;
-        current+=dir; moves++; visited.Add(current);
+        if(choosing || complete || !CanTravel(current,dir)) return;
+        current+=dir; moves++; exploration.Visit(current);
         position=new Vector3(-dir.x*4.15f,0,-dir.y*4.15f); transition=.28f; BuildRoom();
     }
     void Panel(Rect rect, Color c) { GUI.color=c; GUI.DrawTexture(rect,Texture2D.whiteTexture); GUI.color=Color.white; }
@@ -151,33 +158,19 @@ public class DungeonGame : MonoBehaviour
     {
         float sx=Screen.width/1280f, sy=Screen.height/800f;
         GUI.matrix=Matrix4x4.TRS(Vector3.zero,Quaternion.identity,new Vector3(sx,sy,1));
+        GUI.skin.font = uiFont;
         var muted=new Color(.57f,.68f,.73f);
         Panel(new Rect(0,0,1280,95),new Color(.025f,.045f,.065f,.95f));
         Label(new Rect(35,20,600,20),"A  Q U I E T  E X P L O R A T I O N",12,Teal);
         Label(new Rect(33,40,650,45),"THE QUIET VAULT",30,Color.white);
         Label(new Rect(860,31,380,32),"FIND THE GOLDEN EXIT",18,Gold,TextAnchor.MiddleRight);
         Label(new Rect(860,62,380,22),"FLOOR 01  /  NO ENEMIES · NO TRAPS",11,muted,TextAnchor.MiddleRight);
-        Panel(new Rect(1010,122,235,306),new Color(.025f,.045f,.065f,.93f));
-        Label(new Rect(1028,137,210,25),"EXPLORATION MAP",13,Teal);
-        float cell=38, ox=1040, oy=183;
-        foreach(var r in Rooms) {
-            var rect=new Rect(ox+(r.x+1)*cell,oy+(4-r.y)*cell,25,25);
-            foreach(var d in new[]{Vector2Int.up,Vector2Int.right}) if(CanTravel(r,d)) {
-                Panel(new Rect(rect.x+10,rect.y+10+(d.y==1?-cell:0),d.x==1?cell+5:5,d.y==1?cell+5:5),new Color(.17f,.23f,.27f));
-            }
-        }
-        foreach(var r in Rooms) {
-            var rect=new Rect(ox+(r.x+1)*cell,oy+(4-r.y)*cell,25,25);
-            Panel(rect,r==current?Teal:visited.Contains(r)?new Color(.30f,.46f,.48f):new Color(.14f,.20f,.24f));
-            string symbol = r==Rooms[0]?"S":r==Rooms[Rooms.Length-1]?"G":"";
-            Label(rect,symbol,13,r==current?Color.black:Gold,TextAnchor.MiddleCenter);
-            if(r==current) Panel(new Rect(rect.x+10,rect.y+10,5,5),Color.white);
-        }
-        Label(new Rect(1028,390,210,24),"S  START     G  GOAL",11,muted);
-        Label(new Rect(35,125,340,24),"CHAMBER  "+(Array.IndexOf(Rooms,current)+1).ToString("00"),17,Color.white);
-        Label(new Rect(35,155,340,25),visited.Count+" / 12 explored   ·   "+moves+" passages",13,muted);
+        if (choosing) { DrawDifficulty(); return; }
+        DrawMap(muted);
+        Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
+        Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
         Panel(new Rect(0,728,1280,72),new Color(.025f,.045f,.065f,.95f));
-        Label(new Rect(35,748,920,30),"W A S D  /  ARROWS    Move through doors          R    Restart          ESC    Quit",14,muted);
+        Label(new Rect(35,748,920,30),"WASD / 矢印 : 移動     R : 同じ地図でやり直す     N : 難易度選択 / 新しい地図     Esc : 終了",14,muted);
         Label(new Rect(1000,748,245,30),TimeSpan.FromSeconds(elapsed).ToString(@"mm\:ss"),18,Teal,TextAnchor.MiddleRight);
         if(transition>0) Panel(new Rect(0,95,1000,630),new Color(.02f,.04f,.06f,transition));
         if(complete) {
@@ -186,26 +179,107 @@ public class DungeonGame : MonoBehaviour
             Label(new Rect(390,280,500,24),"J O U R N E Y   C O M P L E T E",13,Teal,TextAnchor.MiddleCenter);
             Label(new Rect(390,321,500,60),"EXIT DISCOVERED",32,Gold,TextAnchor.MiddleCenter);
             Label(new Rect(390,391,500,35),visited.Count+" rooms explored  /  "+moves+" passages",16,Color.white,TextAnchor.MiddleCenter);
-            if(GUI.Button(new Rect(525,452,230,45),"EXPLORE AGAIN   [ R ]")) Restart();
+            if(GUI.Button(new Rect(525,452,230,45),"新しい探索を始める   [ N ]")) ShowDifficulty();
         }
+    }
+    static string DifficultyName(int level) { return new[] { "初級", "中級", "上級" }[level]; }
+    void BeginGame(int level)
+    {
+        difficulty = level; layout = DungeonLayout.Generate(level, seeds.Next());
+        choosing = false; hero.gameObject.SetActive(true); Restart();
+    }
+    void ShowDifficulty()
+    {
+        choosing = true; hero.gameObject.SetActive(false);
+        if(roomRoot) roomRoot.gameObject.SetActive(false);
+    }
+    void DrawDifficulty()
+    {
+        Label(new Rect(240,180,800,55),"未知のダンジョンへ",32,Color.white,TextAnchor.MiddleCenter);
+        Label(new Rect(240,244,800,55),"訪れた部屋と、そこで見つけた通路を地図に記録します。\nゴールの場所は、到達するまで分かりません。",17,Teal,TextAnchor.MiddleCenter);
+        var style = new GUIStyle(GUI.skin.button) { fontSize = 23 };
+        for(int i=0; i<3; i++) {
+            float x=225+i*285;
+            Panel(new Rect(x,350,260,210),new Color(.055f,.09f,.12f));
+            Label(new Rect(x,374,260,28),DungeonLayout.RoomCounts[i] + " 部屋",17,Teal,TextAnchor.MiddleCenter);
+            Label(new Rect(x+10,412,240,30),new[]{"短い道のりを気軽に探索","分岐をたどって奥へ","広い迷宮をじっくり探索"}[i],14,Color.white,TextAnchor.MiddleCenter);
+            if(GUI.Button(new Rect(x+20,465,220,62),DifficultyName(i)+"   [ "+(i+1)+" ]",style)) BeginGame(i);
+        }
+        Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  敵・罠なし",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
+    }
+    void DrawMap(Color muted)
+    {
+        Panel(new Rect(1010,122,235,306),new Color(.025f,.045f,.065f,.93f));
+        Label(new Rect(1028,137,210,25),"EXPLORATION MAP",13,Teal);
+        // Fit only discovered cells; hidden layout and goal never influence the bounds.
+        int minX=0,maxX=0,minY=0,maxY=0;
+        foreach(var r in visited) { minX=Math.Min(minX,r.x); maxX=Math.Max(maxX,r.x); minY=Math.Min(minY,r.y); maxY=Math.Max(maxY,r.y); }
+        float cell=Mathf.Min(36, 185f/(maxX-minX+2), 200f/(maxY-minY+2));
+        float size=cell*.57f;
+        Vector2 center=new Vector2(1127,275);
+        foreach(var r in visited) {
+            Vector2 p=center+new Vector2(r.x-(minX+maxX)*.5f,(minY+maxY)*.5f-r.y)*cell;
+            foreach(var d in exploration.KnownExits(layout,r)) {
+                // A short stub signals a visible exit, without revealing the unseen room.
+                float length=cell*(visited.Contains(r+d)?1f:.48f);
+                Vector2 end=p+new Vector2(d.x,-d.y)*length;
+                Panel(new Rect(Mathf.Min(p.x,end.x)-1,Mathf.Min(p.y,end.y)-1,Mathf.Abs(p.x-end.x)+2,Mathf.Abs(p.y-end.y)+2),muted);
+            }
+        }
+        foreach(var r in visited) {
+            Vector2 p=center+new Vector2(r.x-(minX+maxX)*.5f,(minY+maxY)*.5f-r.y)*cell;
+            var rect=new Rect(p.x-size/2,p.y-size/2,size,size);
+            Panel(rect,r==current?Teal:new Color(.30f,.46f,.48f));
+            string symbol=r==Vector2Int.zero?"S":r==layout.Goal && exploration.GoalVisible(layout)?"G":"";
+            if(symbol.Length>0) Label(rect,symbol,Mathf.Max(8,(int)(size*.72f)),r==current?Color.black:Gold,TextAnchor.MiddleCenter);
+            else if(r==current) Panel(new Rect(p.x-2,p.y-2,4,4),Color.white);
+            if(r==current) Panel(new Rect(rect.x,rect.yMax+2,size,2),Teal);
+        }
+        Label(new Rect(1028,389,210,24),exploration.GoalVisible(layout)?"S 開始地点   G ゴール":"S 開始地点   ─ 発見した通路",11,muted);
     }
     void SelfTest()
     {
         try {
-            var seen=new HashSet<Vector2Int>{Rooms[0]}; var queue=new Queue<Vector2Int>(); queue.Enqueue(Rooms[0]);
-            while(queue.Count>0) { var r=queue.Dequeue(); int degree=0;
-                foreach(var d in Directions) if(CanTravel(r,d)) { degree++; if(!CanTravel(r+d,-d)) throw new Exception("Missing return door"); if(seen.Add(r+d)) queue.Enqueue(r+d); }
-                if(degree>4) throw new Exception("Too many doors");
+            DungeonTests.Run();
+            for(int level=0;level<3;level++) {
+                BeginGame(level);
+                if(choosing || visited.Count!=1 || exploration.GoalVisible(layout)) throw new Exception("Initial state leaked map");
+                var start=Vector2Int.zero;
+                foreach(var d in Directions) if(CanTravel(start,d)) {
+                    position=Vector3.zero; Move(new Vector3(d.x*10,0,d.y*10));
+                    if(current!=start+d || visited.Count!=2) throw new Exception("Door crossing failed");
+                    Move(new Vector3(-d.x*10,0,-d.y*10));
+                    if(current!=start || visited.Count!=2) throw new Exception("Return crossing failed");
+                    break;
+                }
+                foreach(var room in layout.Rooms) {
+                    bool tested=false;
+                    foreach(var d in Directions) if(!CanTravel(room,d)) {
+                        current=room; position=Vector3.zero; Move(new Vector3(d.x*10,0,d.y*10));
+                        if(current!=room || Mathf.Max(Mathf.Abs(position.x),Mathf.Abs(position.z))>4.66f) throw new Exception("Wall bypass");
+                        tested=true; break;
+                    }
+                    if(tested) break;
+                }
+                Restart();
+                var distance=layout.Distances(); var route=new List<Vector2Int>(); var cursor=layout.Goal;
+                while(cursor!=start) foreach(var d in Directions) if(layout.CanTravel(cursor,d) && distance[cursor+d]==distance[cursor]-1) {
+                    route.Add(-d); cursor+=d; break;
+                }
+                route.Reverse();
+                for(int i=0;i<route.Count;i++) {
+                    if(exploration.GoalVisible(layout)) throw new Exception("Goal revealed before arrival");
+                    Travel(route[i]);
+                }
+                if(current!=layout.Goal || !exploration.GoalVisible(layout)) throw new Exception("Goal discovery failed");
+                position=Vector3.zero; Update(); if(!complete) throw new Exception("Goal did not complete");
+                var original=layout; Restart();
+                if(layout!=original || complete || moves!=0 || visited.Count!=1 || exploration.GoalVisible(layout)) throw new Exception("Restart failed");
+                ShowDifficulty(); var before=position; Update();
+                if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            if(seen.Count!=Rooms.Length) throw new Exception("Unreachable room");
-            Restart(); Move(new Vector3(10,0,0)); if(current!=Rooms[0]||position.x>4.66f) throw new Exception("Wall bypass");
-            Restart(); Move(new Vector3(0,0,10)); if(current!=new Vector2Int(0,1)) throw new Exception("Door crossing failed");
-            Move(new Vector3(0,0,-10)); if(current!=Rooms[0]) throw new Exception("Return crossing failed");
-            Restart(); foreach(var d in new[]{Vector2Int.up,Vector2Int.up,Vector2Int.right,Vector2Int.right,Vector2Int.up,Vector2Int.up}) Travel(d);
-            if(current!=Rooms[Rooms.Length-1]) throw new Exception("Goal unreachable");
-            position=Vector3.zero; Update(); if(!complete) throw new Exception("Goal did not complete");
-            Restart(); if(complete||moves!=0||visited.Count!=1) throw new Exception("Restart failed");
-            Debug.Log("SELFTEST PASS: connectivity, four-door limit, return paths, walls, room crossing, goal, restart"); Application.Quit(0);
+            Debug.Log("SELFTEST PASS: 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
 }
