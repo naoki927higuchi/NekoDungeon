@@ -20,6 +20,8 @@ public class DungeonGame : MonoBehaviour
     Vector3 position;
     Transform roomRoot, hero, beacon;
     CatAvatar cat;
+    readonly Dictionary<Vector2Int, List<RatBrain>> roomRats = new Dictionary<Vector2Int, List<RatBrain>>();
+    readonly List<RatActor> rats = new List<RatActor>();
     Camera cam;
     bool complete;
     float elapsed, transition;
@@ -66,14 +68,14 @@ public class DungeonGame : MonoBehaviour
     void Box(string label, Vector3 p, Vector3 size, Color c) { Shape(label, PrimitiveType.Cube, p, size, c, roomRoot); }
     void Restart()
     {
-        current = Vector2Int.zero; exploration.Reset();
+        current = Vector2Int.zero; exploration.Reset(); roomRats.Clear();
         position = new Vector3(0,0,-2.4f); elapsed = 0; moves = 0; complete = false; transition = 0;
         BuildRoom(); hero.position = position; hero.rotation = Quaternion.Euler(0,180,0); cat.ResetPose();
     }
     void BuildRoom()
     {
         if (roomRoot != null) { roomRoot.gameObject.SetActive(false); Destroy(roomRoot.gameObject); }
-        roomRoot = new GameObject("Room " + current).transform; beacon = null;
+        roomRoot = new GameObject("Room " + current).transform; beacon = null; rats.Clear();
         Color stone = new Color(.19f,.25f,.29f), edge = new Color(.27f,.34f,.38f);
         Box("Floating foundation", new Vector3(0,-.52f,0), new Vector3(10.8f,.8f,10.8f), new Color(.1f,.15f,.19f));
         for (int x=-4;x<=4;x++) for(int z=-4;z<=4;z++) {
@@ -108,6 +110,21 @@ public class DungeonGame : MonoBehaviour
             beacon = Shape("Exit crystal",PrimitiveType.Cube,new Vector3(0,1.4f,0),Vector3.one*.65f,Gold,roomRoot,true);
             beacon.rotation = Quaternion.Euler(45,0,45);
         }
+        SpawnRats();
+    }
+    void SpawnRats()
+    {
+        if(!roomRats.TryGetValue(current,out var states)) {
+            states = new List<RatBrain> { new RatBrain(new Vector2(1.6f,.35f)) };
+            if(current!=Vector2Int.zero) states.Add(new RatBrain(new Vector2(-2.0f,1.5f)));
+            roomRats[current]=states;
+        }
+        foreach(var state in states) {
+            var obj=new GameObject("Fleeing mouse");obj.transform.SetParent(roomRoot,false);
+            var rat=obj.AddComponent<RatActor>();
+            rat.Initialize(state,Mat(new Color(.52f,.36f,.24f)),Mat(new Color(.85f,.51f,.49f)),Mat(new Color(.04f,.03f,.025f)),Mat(Gold,true));
+            rats.Add(rat);
+        }
     }
     void Update()
     {
@@ -136,6 +153,10 @@ public class DungeonGame : MonoBehaviour
         }
         hero.position=position;
         cat.Animate((position-beforeMove).sqrMagnitude>.000001f ? direction.magnitude : 0,deltaTime);
+        foreach(var rat in rats) {
+            rat.Brain.Tick(new Vector2(position.x,position.z),deltaTime);
+            rat.Sync(deltaTime);
+        }
         if(current==layout.Goal && position.magnitude<1.05f) complete=true;
     }
     void Move(Vector3 delta)
@@ -168,11 +189,12 @@ public class DungeonGame : MonoBehaviour
         Label(new Rect(35,20,600,20),"A  Q U I E T  E X P L O R A T I O N",12,Teal);
         Label(new Rect(33,40,650,45),"THE QUIET VAULT",30,Color.white);
         Label(new Rect(860,31,380,32),"FIND THE GOLDEN EXIT",18,Gold,TextAnchor.MiddleRight);
-        Label(new Rect(860,62,380,22),"FLOOR 01  /  NO ENEMIES · NO TRAPS",11,muted,TextAnchor.MiddleRight);
+        Label(new Rect(860,62,380,22),"FLOOR 01  /  CAT & MICE",11,muted,TextAnchor.MiddleRight);
         if (choosing) { DrawDifficulty(); return; }
         DrawMap(muted);
         Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
         Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
+        Label(new Rect(35,185,540,25),"ネズミは猫を見つけると逃げます",13,muted);
         Panel(new Rect(0,728,1280,72),new Color(.025f,.045f,.065f,.95f));
         Label(new Rect(35,738,980,25),"WASD / 矢印 : 移動     R : 同じ地図でやり直す     N : 難易度選択 / 新しい地図     Esc : 終了",14,muted);
         Label(new Rect(35,766,980,25),"パッド : 左スティック / 方向キーで移動   Y : やり直す   Start / B : 難易度選択",13,muted);
@@ -212,7 +234,7 @@ public class DungeonGame : MonoBehaviour
             if(GUI.Button(new Rect(x+20,465,220,62),DifficultyName(i)+"   [ "+(i+1)+" ]",style)) BeginGame(i);
         }
         Label(new Rect(200,565,880,32),"← → / 左スティック / 方向キー : 選択    A / Enter : 決定    B / Esc : 終了",16,Teal,TextAnchor.MiddleCenter);
-        Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  敵・罠なし",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
+        Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  猫に気づくと逃げるネズミ",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
     }
     void DrawMap(Color muted)
     {
@@ -264,10 +286,32 @@ public class DungeonGame : MonoBehaviour
         Tick(new DungeonInputFrame { Confirm=true },0);
         if(!choosing) throw new Exception("Controller clear-screen confirm failed");
     }
+    void TestRatRooms()
+    {
+        BeginGame(0);
+        if(rats.Count!=1) throw new Exception("Missing start mouse");
+        var initial= rats[0].Brain;
+        initial.Position=new Vector2(2,2);
+        foreach(var d in Directions) if(CanTravel(current,d)) {
+            Travel(d);if(rats.Count!=2) throw new Exception("Missing room mice");
+            Travel(-d);break;
+        }
+        if(rats.Count!=1 || rats[0].Brain!=initial || initial.Position!=new Vector2(2,2)) throw new Exception("Mouse position was not preserved");
+        ShowDifficulty();Tick(default,.05f);
+        if(initial.Position!=new Vector2(2,2)) throw new Exception("Mouse moved in menu");
+        BeginGame(1);
+        if(rats[0].Brain==initial || roomRats.Count!=1) throw new Exception("New dungeon retained old mice");
+        rats[0].Brain.Position=Vector2.zero;Restart();
+        if(rats[0].Brain.Position!=new Vector2(1.6f,.35f)) throw new Exception("Mouse restart failed");
+        complete=true;var before=rats[0].Brain.Position;Tick(default,.05f);
+        if(rats[0].Brain.Position!=before) throw new Exception("Mouse moved after clear");
+    }
     void SelfTest()
     {
         try {
             DungeonTests.Run();
+            RatTests.Run();
+            TestRatRooms();
             DungeonInputTests.Run();
             TestControllerFlow();
             for(int level=0;level<3;level++) {
@@ -307,7 +351,7 @@ public class DungeonGame : MonoBehaviour
                 ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: mouse sight, escape, wall avoidance, calming, overlap, room persistence, restart, pause; virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
