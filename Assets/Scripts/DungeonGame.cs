@@ -256,10 +256,10 @@ public class DungeonGame : MonoBehaviour
         GUI.skin.font = uiFont;
         var muted=new Color(.57f,.68f,.73f);
         Panel(new Rect(0,0,1280,95),new Color(.025f,.045f,.065f,.95f));
-        Label(new Rect(35,20,600,20),"A  Q U I E T  E X P L O R A T I O N",12,Teal);
-        Label(new Rect(33,40,650,45),"THE QUIET VAULT",30,Color.white);
+        Label(new Rect(35,20,600,20),"猫パンチで切りひらく、罠だらけの大冒険",12,Teal);
+        Label(new Rect(33,40,650,45),"猫パンチとひみつの迷宮",30,Color.white);
         Label(new Rect(860,31,380,32),"FIND THE GOLDEN EXIT",18,Gold,TextAnchor.MiddleRight);
-        Label(new Rect(860,62,380,22),"FLOOR 01  /  CAT & MICE",11,muted,TextAnchor.MiddleRight);
+        Label(new Rect(860,62,380,22),"FLOOR 01  /  CATS, MICE & TRAPS",11,muted,TextAnchor.MiddleRight);
         if (choosing) { DrawDifficulty(); return; }
         DrawMap(muted);
         Label(new Rect(1028,455,210,28),"猫のHP  "+health.HP+" / "+CatHealth.MaxHP,18,health.HP<=2?new Color(1,.4f,.3f):Teal);

@@ -17,12 +17,12 @@ public static class BuildGame
         System.IO.Directory.CreateDirectory("Assets/Scenes");
         EditorSceneManager.SaveScene(scene, "Assets/Scenes/Dungeon.unity");
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene("Assets/Scenes/Dungeon.unity", true) };
-        PlayerSettings.productName = "The Quiet Vault";
+        PlayerSettings.productName = "猫パンチとひみつの迷宮";
         PlayerSettings.companyName = "Independent";
         PlayerSettings.defaultScreenWidth = 1280;
         PlayerSettings.defaultScreenHeight = 800;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
-        var report = BuildPipeline.BuildPlayer(EditorBuildSettings.scenes, "Builds/Windows/QuietVault.exe", BuildTarget.StandaloneWindows64, BuildOptions.None);
+        var report = BuildPipeline.BuildPlayer(EditorBuildSettings.scenes, "Builds/Windows/NekoDungeon.exe", BuildTarget.StandaloneWindows64, BuildOptions.None);
         if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
             throw new System.Exception("Build failed: " + report.summary.result);
     }

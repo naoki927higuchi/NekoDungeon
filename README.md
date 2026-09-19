@@ -1,4 +1,4 @@
-# THE QUIET VAULT
+# 猫パンチとひみつの迷宮
 
 Unity 6000.6.2f1製の、3D見下ろし型ダンジョン探索ゲームです。猫を操作して、ネズミと罠のある部屋を探索します。
 罠にはKenneyの既存3Dアセット「Platformer Kit 4.1」（CC0）を使用しています。出典と利用条件は `THIRD_PARTY_NOTICES.md` に記録しています。
@@ -77,7 +77,7 @@ HPは部屋を移動しても保持されます。0になるとゲームオー�
 
 ## 起動
 
-`Builds/Windows/QuietVault.exe` を開きます。配布時はWindowsフォルダー全体を渡してください。
+`Builds/Windows/NekoDungeon.exe` を開きます。配布時はWindowsフォルダー全体を渡してください。
 
 - WASD / 矢印キー：移動。光る扉の先まで歩くと隣の部屋へ移動します。
 - 起動時に初級・中級・上級をクリック、または1 / 2 / 3キーで選択
