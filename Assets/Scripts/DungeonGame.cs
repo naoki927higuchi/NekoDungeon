@@ -12,6 +12,8 @@ public class DungeonGame : MonoBehaviour
     readonly System.Random seeds = new System.Random();
     bool choosing = true;
     int difficulty;
+    int selectedDifficulty;
+    readonly MenuNavigation menuNavigation = new MenuNavigation();
     Font uiFont;
     readonly Dictionary<Color, Material> materials = new Dictionary<Color, Material>();
     Vector2Int current;
@@ -111,23 +113,26 @@ public class DungeonGame : MonoBehaviour
     }
     void Update()
     {
-        if(Input.GetKeyDown(KeyCode.Escape)) Application.Quit();
+        Tick(DungeonInput.Read(), Mathf.Min(Time.deltaTime,.05f));
+    }
+    void Tick(DungeonInputFrame input, float deltaTime)
+    {
+        if(input.Quit || (choosing && input.Back)) { Application.Quit(); return; }
         if (choosing) {
-            if (Input.GetKeyDown(KeyCode.Alpha1)) BeginGame(0);
-            else if (Input.GetKeyDown(KeyCode.Alpha2)) BeginGame(1);
-            else if (Input.GetKeyDown(KeyCode.Alpha3)) BeginGame(2);
+            selectedDifficulty = Mathf.Clamp(selectedDifficulty + menuNavigation.Step(input.Move.x, Time.unscaledTime), 0, 2);
+            if (input.DifficultyKey > 0) BeginGame(input.DifficultyKey - 1);
+            else if (input.Confirm) BeginGame(selectedDifficulty);
             return;
         }
-        if(Input.GetKeyDown(KeyCode.R)) Restart();
-        if(Input.GetKeyDown(KeyCode.N)) { ShowDifficulty(); return; }
+        if(input.Menu || input.Back || (complete && input.Confirm)) { ShowDifficulty(); return; }
+        if(input.Restart) { Restart(); return; }
         if(beacon) { beacon.Rotate(0,45*Time.deltaTime,0,Space.World); beacon.position=new Vector3(0,1.4f+Mathf.Sin(Time.time*2)*.15f,0); }
         transition = Mathf.Max(0,transition-Time.deltaTime);
         if(complete) return;
         elapsed += Time.deltaTime;
-        var direction = new Vector3((Input.GetKey(KeyCode.D)||Input.GetKey(KeyCode.RightArrow)?1:0)-(Input.GetKey(KeyCode.A)||Input.GetKey(KeyCode.LeftArrow)?1:0),0,
-            (Input.GetKey(KeyCode.W)||Input.GetKey(KeyCode.UpArrow)?1:0)-(Input.GetKey(KeyCode.S)||Input.GetKey(KeyCode.DownArrow)?1:0)).normalized;
+        var direction = new Vector3(input.Move.x,0,input.Move.y);
         if(direction.sqrMagnitude>0) {
-            Move(direction*4.4f*Mathf.Min(Time.deltaTime,.05f));
+            Move(direction*4.4f*deltaTime);
             hero.rotation=Quaternion.Slerp(hero.rotation,Quaternion.LookRotation(direction),Time.deltaTime*14);
             stride+=Time.deltaTime*12;
         }
@@ -170,7 +175,8 @@ public class DungeonGame : MonoBehaviour
         Label(new Rect(35,125,340,24),"探索済み  " + visited.Count + " 部屋",17,Color.white);
         Label(new Rect(35,155,340,25),DifficultyName(difficulty) + "  ·  " + moves + " passages",13,muted);
         Panel(new Rect(0,728,1280,72),new Color(.025f,.045f,.065f,.95f));
-        Label(new Rect(35,748,920,30),"WASD / 矢印 : 移動     R : 同じ地図でやり直す     N : 難易度選択 / 新しい地図     Esc : 終了",14,muted);
+        Label(new Rect(35,738,980,25),"WASD / 矢印 : 移動     R : 同じ地図でやり直す     N : 難易度選択 / 新しい地図     Esc : 終了",14,muted);
+        Label(new Rect(35,766,980,25),"パッド : 左スティック / 方向キーで移動   Y : やり直す   Start / B : 難易度選択",13,muted);
         Label(new Rect(1000,748,245,30),TimeSpan.FromSeconds(elapsed).ToString(@"mm\:ss"),18,Teal,TextAnchor.MiddleRight);
         if(transition>0) Panel(new Rect(0,95,1000,630),new Color(.02f,.04f,.06f,transition));
         if(complete) {
@@ -179,18 +185,18 @@ public class DungeonGame : MonoBehaviour
             Label(new Rect(390,280,500,24),"J O U R N E Y   C O M P L E T E",13,Teal,TextAnchor.MiddleCenter);
             Label(new Rect(390,321,500,60),"EXIT DISCOVERED",32,Gold,TextAnchor.MiddleCenter);
             Label(new Rect(390,391,500,35),visited.Count+" rooms explored  /  "+moves+" passages",16,Color.white,TextAnchor.MiddleCenter);
-            if(GUI.Button(new Rect(525,452,230,45),"新しい探索を始める   [ N ]")) ShowDifficulty();
+            if(GUI.Button(new Rect(525,452,230,45),"新しい探索   [ N / A ]")) ShowDifficulty();
         }
     }
     static string DifficultyName(int level) { return new[] { "初級", "中級", "上級" }[level]; }
     void BeginGame(int level)
     {
-        difficulty = level; layout = DungeonLayout.Generate(level, seeds.Next());
+        difficulty = level; selectedDifficulty = level; menuNavigation.Reset(); layout = DungeonLayout.Generate(level, seeds.Next());
         choosing = false; hero.gameObject.SetActive(true); Restart();
     }
     void ShowDifficulty()
     {
-        choosing = true; hero.gameObject.SetActive(false);
+        choosing = true; menuNavigation.Reset(); hero.gameObject.SetActive(false);
         if(roomRoot) roomRoot.gameObject.SetActive(false);
     }
     void DrawDifficulty()
@@ -200,11 +206,13 @@ public class DungeonGame : MonoBehaviour
         var style = new GUIStyle(GUI.skin.button) { fontSize = 23 };
         for(int i=0; i<3; i++) {
             float x=225+i*285;
+            if(i==selectedDifficulty) Panel(new Rect(x-3,347,266,216),Teal);
             Panel(new Rect(x,350,260,210),new Color(.055f,.09f,.12f));
             Label(new Rect(x,374,260,28),DungeonLayout.RoomCounts[i] + " 部屋",17,Teal,TextAnchor.MiddleCenter);
             Label(new Rect(x+10,412,240,30),new[]{"短い道のりを気軽に探索","分岐をたどって奥へ","広い迷宮をじっくり探索"}[i],14,Color.white,TextAnchor.MiddleCenter);
             if(GUI.Button(new Rect(x+20,465,220,62),DifficultyName(i)+"   [ "+(i+1)+" ]",style)) BeginGame(i);
         }
+        Label(new Rect(200,565,880,32),"← → / 左スティック / 方向キー : 選択    A / Enter : 決定    B / Esc : 終了",16,Teal,TextAnchor.MiddleCenter);
         Label(new Rect(240,605,800,40),"選ぶたびに新しい地図を生成  /  敵・罠なし",15,new Color(.57f,.68f,.73f),TextAnchor.MiddleCenter);
     }
     void DrawMap(Color muted)
@@ -237,10 +245,32 @@ public class DungeonGame : MonoBehaviour
         }
         Label(new Rect(1028,389,210,24),exploration.GoalVisible(layout)?"S 開始地点   G ゴール":"S 開始地点   ─ 発見した通路",11,muted);
     }
+    void TestControllerFlow()
+    {
+        ShowDifficulty(); selectedDifficulty=0;
+        Tick(new DungeonInputFrame { Move=Vector2.right },0);
+        if(selectedDifficulty!=1) throw new Exception("Controller difficulty selection failed");
+        Tick(new DungeonInputFrame { Confirm=true },0);
+        if(choosing || difficulty!=1) throw new Exception("Controller confirm failed");
+        var before=position;
+        Tick(new DungeonInputFrame { Move=Vector2.up },.05f);
+        if(position.z<=before.z) throw new Exception("Controller movement failed");
+        Tick(new DungeonInputFrame { Restart=true },0);
+        if(position!=before || moves!=0) throw new Exception("Controller restart failed");
+        Tick(new DungeonInputFrame { Menu=true },0);
+        if(!choosing) throw new Exception("Controller menu failed");
+        Tick(new DungeonInputFrame { DifficultyKey=3 },0);
+        if(choosing || difficulty!=2) throw new Exception("Keyboard difficulty shortcut failed");
+        complete=true;
+        Tick(new DungeonInputFrame { Confirm=true },0);
+        if(!choosing) throw new Exception("Controller clear-screen confirm failed");
+    }
     void SelfTest()
     {
         try {
             DungeonTests.Run();
+            DungeonInputTests.Run();
+            TestControllerFlow();
             for(int level=0;level<3;level++) {
                 BeginGame(level);
                 if(choosing || visited.Count!=1 || exploration.GoalVisible(layout)) throw new Exception("Initial state leaked map");
@@ -272,13 +302,13 @@ public class DungeonGame : MonoBehaviour
                     Travel(route[i]);
                 }
                 if(current!=layout.Goal || !exploration.GoalVisible(layout)) throw new Exception("Goal discovery failed");
-                position=Vector3.zero; Update(); if(!complete) throw new Exception("Goal did not complete");
+                position=Vector3.zero; Tick(default,0); if(!complete) throw new Exception("Goal did not complete");
                 var original=layout; Restart();
                 if(layout!=original || complete || moves!=0 || visited.Count!=1 || exploration.GoalVisible(layout)) throw new Exception("Restart failed");
-                ShowDifficulty(); var before=position; Update();
+                ShowDifficulty(); var before=position; Tick(default,0);
                 if(!choosing || position!=before || hero.gameObject.activeSelf) throw new Exception("Menu did not pause");
             }
-            Debug.Log("SELFTEST PASS: 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
+            Debug.Log("SELFTEST PASS: virtual gamepad controls, dead zone, disconnect/reconnect, keyboard mixing, menu repeat, controller game flow; 600 generated layouts; fog of exploration; hidden goal; all difficulties; walls; door crossing; return; goal; restart; menu");
             Application.Quit(0);
         } catch(Exception e) { Debug.LogException(e); Application.Quit(1); }
     }
