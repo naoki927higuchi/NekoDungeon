@@ -5,3 +5,9 @@
 /UserSettings/
 /Builds/
 *.log
+
+# Unity-generated IDE files follow the renamed project folder.
+/.vs/
+/*.sln
+/*.slnx
+/*.csproj

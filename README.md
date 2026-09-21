@@ -77,7 +77,7 @@ HPは部屋を移動しても保持されます。0になるとゲームオー�
 
 ## 起動
 
-`Builds/Windows/NekoDungeon.exe` を開きます。再頒布には `Build-Windows.ps1` が作成する `Builds/NekoDungeon-Windows.zip` を使用してください。受け取った側ではZIP全体を展開して起動します。
+`Builds/Windows/NekoDungeon.exe` を開きます。再頒布には 公開時に選定した `Distribution/NekoDungeon-1.0.0-Windows.zip` を使用してください。受け取った側ではZIP全体を展開して起動します。
 
 - WASD / 矢印キー：移動。光る扉の先まで歩くと隣の部屋へ移動します。
 - 起動時に初級・中級・上級をクリック、または1 / 2 / 3キーで選択
@@ -148,8 +148,8 @@ Unity側のビルド処理は `Builds/Windows` を生成物専用フォルダー
 
 スクリプトはビルドと自動テスト後、実行に必要なファイルだけを選び、説明書・外部素材の出典・元のライセンス文書とともにZIP化します。ソース、Unityキャッシュ、開発ログ、デバッグ用バックアップは配布しません。ZIPを別フォルダーに展開し、全ファイルのハッシュ照合と展開先での自動テストに成功した後、配布ZIPを更新します。失敗した場合は既存の配布ZIPを維持し、診断用の一時フォルダーが残る場合があります。
 
-- 配布物：`Builds/NekoDungeon-Windows.zip`
-- SHA256：`Builds/NekoDungeon-Windows.zip.sha256`
+- 配布物：`Distribution/NekoDungeon-1.0.0-Windows.zip`
+- SHA256：`Distribution/NekoDungeon-1.0.0-Windows.zip.sha256`
 - 配布用説明書の原本：`Distribution/README.txt`
 - ZIP内：`NekoDungeon-Windows/README.txt`、`THIRD_PARTY_NOTICES.md`、`Licenses/`
 
@@ -176,8 +176,33 @@ KenneyのCC0アセットは帰属表示が必須ではありませんが、出�
 
 - 履歴を確認：`git log --oneline`
 - 変更内容を確認：`git show <コミットID>`
-- 過去の状態を別フォルダーで開く：`git worktree add --detach ../DungeonExplorer3D-review <コミットID>`
+- 過去の状態を別フォルダーで開く：`git worktree add --detach ../NekoDungeon-review <コミットID>`
 
 過去の状態を開いた後は、そのフォルダーの `Build-Windows.ps1` で実行ファイルを再作成できます。
 最初の保存対象は、全12部屋・部屋間の往復移動・探索マップ・ゴール判定・リスタートが実装された試作版です。それ以前の状態は履歴に含まれません。
 ソースと設定をローカルに保存し、Unityのキャッシュやビルド成果物は除外します。リモートへの送信は行いません。
+
+## NekoDungeon の配布ZIP管理
+
+ローカルプロジェクト: `W:\dev\NekoDungeon`。
+GitHub: https://github.com/naoki927higuchi/NekoDungeon （非公開）。
+旧DungeonExplorer3DのGit履歴を引き継いでいます。
+
+公開初版1.0.0には改名前の最新検証済みZIPをそのまま採用しました。
+ゲームの再ビルドは行っていません。公開版数は配布物の識別用であり、
+既存バイナリ内のバージョン表記を変更したものではありません。
+
+通常の `Build-Windows.ps1` は `Builds/LocalPackages/` に日時付きZIPを作ります。
+このフォルダーはGit管理対象外で、開発中のZIPをpushしません。
+リモート公開を行う時点で、送信するZIPを明示的に選びます。
+
+```powershell
+.\Prepare-Release.ps1 -Version 1.0.1 -ZipPath 'Builds\LocalPackages\対象のZIP.zip'
+# HISTORY.mdへ公開日時と変更概要を記録してから、ソースとDistributionの対象ファイルをコミット・pushする。
+```
+
+Prepare-Release.ps1は元のSHA256・ZIP構成・実行ファイルを検証し、
+`Distribution/NekoDungeon-<version>-Windows.zip`、`.sha256`、`.json`を作成します。
+リリース情報には採用元ZIPと準備時点のソースコミットを記録します。
+準備後はゲームソースを変更せずに公開してください。スクリプト自体はpushを行いません。
+公開済みの同じ版数への上書きは拒否します。

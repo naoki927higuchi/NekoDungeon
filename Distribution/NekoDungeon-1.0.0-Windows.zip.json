@@ -1,0 +1,11 @@
+﻿{
+    "Product":  "NekoDungeon",
+    "ReleaseVersion":  "1.0.0",
+    "PreparedAt":  "2026-09-22T02:53:38.0979226+09:00",
+    "PreparationCommit":  "92aa84f3a03c13afe2219b70b737c9e45839a4bd",
+    "SourceZip":  "Builds/NekoDungeon-Windows.zip",
+    "SHA256":  "a6208700d4218cc9d4f4c31fd55fa200a81e3bdfd86e64865d4e2aac318a5579",
+    "Size":  37227712,
+    "Validation":  "Source checksum, ZIP structure, and extracted player self-tests passed",
+    "Note":  "Selected existing binary unchanged; release version does not rewrite embedded binary metadata."
+}

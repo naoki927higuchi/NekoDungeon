@@ -1,4 +1,4 @@
-param([string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.6.2f1\Editor\Unity.exe')
+﻿param([string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.6.2f1\Editor\Unity.exe')
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $UnityEditor)) { throw 'Unity Editor not found.' }
 $buildLog = Join-Path $PSScriptRoot 'build.log'
@@ -21,7 +21,11 @@ foreach ($name in $runtimeNames) {
     if (-not (Test-Path -LiteralPath $source)) { throw "Expected runtime file missing: $source" }
     Copy-Item -LiteralPath $source -Destination $packageGame -Recurse
 }
-$zipPath = Join-Path $PSScriptRoot 'Builds\NekoDungeon-Windows.zip'
+# Development packages stay local until explicitly selected for a remote release.
+$localPackages = Join-Path $PSScriptRoot 'Builds\LocalPackages'
+New-Item -ItemType Directory -Path $localPackages -Force | Out-Null
+$packageId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+$zipPath = Join-Path $localPackages "NekoDungeon-Windows-$packageId.zip"
 $stagedZip = Join-Path $packageRoot 'NekoDungeon-Windows.zip'
 Compress-Archive -LiteralPath $packageGame -DestinationPath $stagedZip -CompressionLevel Optimal
 
@@ -38,7 +42,7 @@ $packageTestLog = Join-Path $PSScriptRoot 'package-selftest.log'
 $packageTest = Start-Process -FilePath (Join-Path $verifiedGame 'NekoDungeon.exe') -ArgumentList @('-batchmode', '-nographics', '-selftest', '-logFile', ('"' + $packageTestLog + '"')) -PassThru -Wait -WindowStyle Hidden
 if ($packageTest.ExitCode -ne 0 -or -not (Select-String -LiteralPath $packageTestLog -SimpleMatch 'SELFTEST PASS:' -Quiet)) { throw 'Packaged player self-tests failed.' }
 Copy-Item -LiteralPath $stagedZip -Destination $zipPath -Force
-(Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash + '  NekoDungeon-Windows.zip' | Set-Content -LiteralPath ($zipPath + '.sha256') -Encoding ascii
+(Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash + '  ' + [IO.Path]::GetFileName($zipPath) | Set-Content -LiteralPath ($zipPath + '.sha256') -Encoding ascii
 
 # Only remove the unique staging directory we created, after confirming containment and no links.
 $buildsRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'Builds'))
